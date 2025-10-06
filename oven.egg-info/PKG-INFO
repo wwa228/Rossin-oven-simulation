@@ -1,0 +1,17 @@
+Metadata-Version: 2.1
+Name: oven
+Version: 1.0.0
+Summary: Oven modeling for OC
+Home-page: https://github.com/siddharth-prabhu/OC_OvenModeling
+Author: Siddharth Prabhu
+Author-email: siddharth.prabhu15@gmail.com
+License: MIT
+Description: # OC
+Keywords: demo project
+Platform: UNKNOWN
+Classifier: Development Status :: 5 - Production/Stable
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Operating System :: OS Independent
+Description-Content-Type: text/markdown

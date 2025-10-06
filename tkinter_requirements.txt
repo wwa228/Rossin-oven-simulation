@@ -1,0 +1,14 @@
+jax[cpu]==0.4.23
+jaxlib==0.4.23
+jaxtyping==0.2.25
+diffrax==0.5.0
+equinox==0.11.3
+lineax==0.0.4
+optimistix==0.0.6
+numpy==1.22.3
+scipy==1.9.3
+pandas==1.4.2
+Pillow==10.2.0
+matplotlib==3.8.0
+scienceplots==2.1.1
+tqdm==4.66.2

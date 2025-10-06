@@ -1,0 +1,277 @@
+Local device count 1 
+local devices [CpuDevice(id=0)]
+---------------------------------------------------------------------------------------------------- 
+Optimization of ['R13SSR4'] with warm start from None
+---------------------------------------------------------------------------------------------------- 
+Arguments
+{'atol': 1e-08,
+ 'cpus': 1,
+ 'gen': 200,
+ 'id': '',
+ 'iterations': 100,
+ 'load_dir': '.',
+ 'lr': 0.001,
+ 'msg': '',
+ 'mxstep': 10000,
+ 'optimize': 1,
+ 'partition': '',
+ 'products_test': 'R13SSR4',
+ 'products_train': 'R13SSR4',
+ 'recirculation': 0,
+ 'rtol': 1e-06} 
+----------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------- 
+Product and simulation specific oven constants 
+R13 : {'density_air': 1,
+ 'density_particle': 2500,
+ 'density_product': 7.60855,
+ 'enthalpy_vaporization_water': 2000000.0,
+ 'equilibrium_moisture': 0.008,
+ 'ntimes': 15,
+ 'ny': 20,
+ 'nzones': 5,
+ 'product_height': 0.1,
+ 'radius_particle': 4e-06,
+ 'reverse_zone': 3,
+ 'specific_heat_capacity_air': 1047,
+ 'specific_heat_capacity_solid': 800}
+---------------------------------------------------------------------------------------------------- 
+Experiment specific controls and targets 
+R13SSR4 : Product(controls={'init_velocity_air': Array([0.087, 0.097, 0.154, 0.207, 0.207], dtype=float64), 'init_temperature_air': Array([484.11111111, 481.33333333, 500.77777778, 500.77777778,
+       500.77777778], dtype=float64), 'residence_time': Array([14.], dtype=float64), 'init_moisture_air': Array([0.01, 0.01, 0.01, 0.01, 0.01], dtype=float64), 'recirculation_ratio': Array([0., 0., 0., 0., 0.], dtype=float64)}, targets={5: array([303.15975, 330.49455, 332.1721 , 332.406  , 332.28905, 332.1331 ,
+       331.9382 , 332.445  , 332.9907 , 333.0296 , 332.73715, 332.6787 ,
+       332.7762 , 332.77625, 333.12705, 331.50925, 331.4118 , 332.5422 ,
+       342.3779 , 356.5566 , 371.71965, 383.22035, 394.49505, 408.18555,
+       417.93835, 423.74725, 429.8976 , 439.891  , 448.15855, 454.0147 ,
+       458.905  , 463.3526 , 467.29535, 460.3205 , 440.83385, 413.00715,
+       385.1415 , 365.291  , 358.0888 , 362.95505, 378.90165, 400.5107 ,
+       421.1597 , 437.6301 , 449.7088 , 458.1567 , 464.10265, 468.9364 ,
+       472.29265, 474.41485, 476.1927 , 477.9699 , 479.50445, 480.85675,
+       482.1078 , 483.25755, 484.34655, 485.3546 , 486.0804 , 486.54405,
+       486.64495, 486.7256 , 486.84655, 486.8667 , 486.8667 , 486.8667 ,
+       486.8667 , 486.8667 , 486.8264 , 486.84655, 486.8264 , 486.7861 ,
+       486.70555, 472.4738 , 340.60955, 306.33025, 299.1855 , 296.4629 ,
+       294.93855, 294.03475, 293.49195, 294.557  , 293.9744 , 293.35125,
+       293.95435, 293.39145, 292.74795])}, targets_mask={'mask': Array([0., 0., 0., 0., 0., 1., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+       0., 0., 0.], dtype=float64), 'target_map': Array([[0., 0., 0., ..., 0., 0., 0.],
+       [0., 0., 0., ..., 0., 0., 0.],
+       [0., 0., 0., ..., 0., 0., 0.],
+       ...,
+       [0., 0., 0., ..., 0., 0., 0.],
+       [0., 0., 0., ..., 0., 0., 0.],
+       [0., 0., 0., ..., 0., 0., 0.]], dtype=float64)})
+---------------------------------------------------------------------------------------------------- 
+def _mass_transfer_coefficient(x, B, c):
+    # negative value is eliminated in the final equation using exp
+
+    X, Ts, Y, Ta, Ye = x
+    
+    if isinstance(B, dict):
+
+        x =  jnp.append(jnp.append(X, jnp.append(Ts, jnp.append(Ta, Y))), c.density_product)
+        n = len(B["weight"])
+        for i, (weight, bias) in enumerate(zip(B["weight"], B["bias"])):
+            x = jnp.dot(weight, x) + bias
+            if i < n - 1:
+                x = jnp.tanh(x)
+
+        return jnp.exp(x)
+    else: return B
+
+---------------------------------------------------------------------------------------------------- 
+def _heat_transfer_coefficient(x, A, c):
+    # negative value is eliminated in the final equation using exp
+    
+    X, Ts, Y, Ta, Ye = x
+    
+    if isinstance(A, dict):
+        x =  jnp.append(jnp.append(X, jnp.append(Ts, jnp.append(Ta, Y))), c.density_product)
+        n = len(A["weight"])
+        for i, (weight, bias) in enumerate(zip(A["weight"], A["bias"])):
+            x = jnp.dot(weight, x) + bias
+            if i < n - 1 :
+                x = jnp.tanh(x) 
+        
+        return jnp.exp(x)
+    else: return A
+
+---------------------------------------------------------------------------------------------------- 
+def moisture_content(T, density_air, relative_humidity = 1):
+    # calculates the equilibrium moisture content in the air at given temperature
+    # assumes ideal gas law
+    mw_air = 28.96e-3 # kg/mol molecular weight of air
+    mw_water = 18.01e-3 # kg/mol molecular weight of water 
+    P_sat = saturated_pressure(T) # Pa
+    return vapor_pressure_to_moisture(P_sat, T, density_air, relative_humidity)
+
+---------------------------------------------------------------------------------------------------- 
+scaled_reaction_rate = lambda A, k0, T : k0 * jnp.exp( - A / 1.98 / unscale_states(T, temperature_max, temperature_min))
+
+---------------------------------------------------------------------------------------------------- 
+Training Experiments target heights
+R13SSR4 : dict_keys([5])
+Testing experiments target heights
+R13SSR4 : dict_keys([5])
+---------------------------------------------------------------------------------------------------- 
+def _objective(meta_params : dict, solid_moisture_init : jnp.ndarray, solid_moisture_sigma : jnp.ndarray, constants : Constants, 
+                target : jnp.ndarray, target_mask : jnp.ndarray, controls : Controls, solid_temperature_init : jnp.ndarray, 
+                recirculation : bool, key) -> Tuple[jnp.ndarray]:
+    
+    ny = constants.ny
+    xinit = jnp.column_stack((
+        solid_moisture_init * jnp.ones(ny) + solid_moisture_sigma * jrandom.normal(key, shape = (ny, )), # moisture 
+        solid_temperature_init * jnp.ones(ny), # temperature
+        jnp.zeros(shape = (ny, )) # cure 
+    ))
+
+    _parameters = meta_params["parameters"]
+    _parameters["reaction_rate"] = 2.33 * 10**7 # Do not optimize this yet
+    _parameters["activation_energy"] = 20. * 10**3 # Do not optimize this yet
+
+    # oven_dynamics discards the provided initial condition (It is assumed that the initial condition are the values of states at t = -1)
+    solution = oven_dynamics(xinit, _parameters, controls, constants, reverse_zone = constants.reverse_zone, nzones = constants.nzones, recirculation = recirculation)
+    moisture_solid, temperature_solid, cure, moisture_air, temperature_air, t_event = tree_util.tree_map(jnp.vstack, solution)
+
+    # mse_cost = mean squared error cost. total_cost = mse_cost + regularization cost
+    mse_cost = jnp.sum((temperature_solid * target_mask - target[1:])**2 * (ny - jnp.count_nonzero(target_mask)))
+    total_cost = mse_cost
+    return total_cost, mse_cost, xinit, *(moisture_solid, temperature_solid, cure, moisture_air, temperature_air, t_event)
+
+---------------------------------------------------------------------------------------------------- 
+Initial guess of parameters {'parameters': Parameters(params={'mass_transfer_coefficient_falling': defaultdict(<class 'list'>, {'weight': [Array([[ 0.00271846, -0.00221971,  0.00524635, -0.00582695, -0.00499798],
+       [-0.01332438, -0.00715606, -0.00231319,  0.00983229, -0.01126742],
+       [ 0.02126611, -0.00093819,  0.00286677, -0.00305304, -0.00476762],
+       [-0.00717686, -0.00202819, -0.01123574, -0.00293377,  0.00307205],
+       [ 0.01219444,  0.00659236, -0.00093308, -0.00197792, -0.01545449],
+       [-0.00212836, -0.00993648,  0.00387322, -0.00629826,  0.00046373],
+       [-0.01007371, -0.0180889 , -0.02001135, -0.00998022, -0.01770827],
+       [ 0.01301542,  0.00983185, -0.00457604,  0.01229619,  0.00953824],
+       [ 0.01840678, -0.00122476,  0.01160498,  0.02489938, -0.01162747],
+       [-0.0009059 , -0.00436782, -0.00269817,  0.01199049,  0.00463232]],      dtype=float64), Array([[-1.17166272e-02,  1.18439915e-02, -6.54599611e-03,
+        -9.67287233e-03,  1.38260311e-02, -2.85808155e-02,
+        -5.04328744e-03,  7.86806072e-03, -2.09543967e-02,
+         4.93921811e-03],
+       [-1.26754078e-03,  3.71941279e-03,  2.05090838e-03,
+        -5.82160562e-03, -3.92664088e-03,  2.59951837e-03,
+         1.35400578e-02, -2.68616597e-03,  9.33500451e-03,
+        -1.52420259e-02],
+       [-7.22390652e-03,  8.37965201e-03,  8.26144035e-03,
+        -1.01641366e-02,  1.13020942e-02,  9.95546547e-03,
+         3.62033572e-03,  3.87298081e-03, -1.43879113e-02,
+         2.47027029e-03],
+       [-4.51901854e-03, -2.48711857e-03, -5.43480284e-03,
+         4.62321482e-03,  1.21875705e-04, -9.00458785e-03,
+        -1.04983042e-02, -5.83256195e-03, -1.41181309e-02,
+         1.68635957e-03],
+       [ 8.63539071e-04, -1.30289143e-02, -7.72673855e-04,
+         7.23215181e-03, -8.12740966e-03,  6.73156814e-03,
+         1.52174641e-02,  9.43783620e-03,  6.78677944e-03,
+         2.87952941e-03],
+       [ 2.47787390e-03,  2.67950459e-03, -1.38393162e-03,
+        -9.47461215e-04, -1.07274907e-02,  1.38252326e-02,
+        -3.59931951e-03,  2.00473469e-03, -1.25082567e-02,
+         7.33850478e-03],
+       [ 7.84088576e-03,  1.30789439e-02,  1.68642163e-03,
+         5.09139815e-03,  4.17256896e-03,  1.40380761e-02,
+         1.00333663e-03, -7.74356310e-03, -1.83175936e-02,
+        -5.69058416e-03],
+       [ 1.21569325e-02, -9.67576876e-03, -7.43663415e-03,
+        -7.20552719e-05, -4.72400530e-04, -3.21778087e-02,
+        -8.28436445e-03,  2.94682664e-03,  1.66030232e-02,
+         3.24112978e-03],
+       [ 5.46391596e-03,  2.06055260e-02, -1.27476609e-02,
+        -1.51933950e-03, -1.74114110e-03,  1.18129748e-02,
+         1.02296968e-02,  5.22906710e-03,  1.30305574e-02,
+         1.97620746e-02],
+       [ 9.67219372e-03, -4.75472929e-04, -2.92547530e-03,
+         7.78812421e-03,  3.57918494e-03,  1.22401429e-02,
+        -2.07094367e-02,  3.15417430e-03, -4.67993699e-03,
+        -1.81451176e-02]], dtype=float64), Array([[ 0.00133239, -0.0095473 , -0.00929099, -0.00082596, -0.00946257,
+         0.0030406 , -0.01823037,  0.00754918,  0.00024248, -0.00711746]],      dtype=float64)], 'bias': [Array([ 0.01048952,  0.01083855, -0.00320652,  0.00702542, -0.00494052,
+        0.00647191, -0.00884282, -0.00881121,  0.00606508,  0.01529383],      dtype=float64), Array([-0.01578262,  0.00852604,  0.00283512,  0.01225962,  0.00446697,
+        0.00030118,  0.01318117,  0.02149447, -0.0135099 , -0.00226544],      dtype=float64), Array([-0.00834291], dtype=float64)]}), 'mass_transfer_coefficient_constant': Array([160.], dtype=float64), 'heat_transfer_coefficient_falling': defaultdict(<class 'list'>, {'weight': [Array([[-0.00724685, -0.01618596,  0.00218296, -0.00700299, -0.00317363],
+       [ 0.00013072,  0.01482621, -0.01537637,  0.01821624, -0.02252088],
+       [-0.00592651, -0.01329884,  0.00924959, -0.00345155, -0.00316895],
+       [-0.00199734, -0.00861019,  0.0124686 , -0.00704671,  0.00169946],
+       [ 0.00670148,  0.00204135,  0.00023319,  0.0042336 , -0.01049741],
+       [ 0.01290697, -0.00044366, -0.0015932 ,  0.00226697,  0.00439212],
+       [ 0.01446076,  0.014174  ,  0.00527482,  0.01947832,  0.00732787],
+       [ 0.00345952,  0.00463592, -0.0162369 ,  0.00403397, -0.00648092],
+       [ 0.00130429, -0.00472191, -0.00111818,  0.00721872, -0.01111588],
+       [ 0.00433874, -0.00157516,  0.00188875,  0.00413284, -0.00139073]],      dtype=float64), Array([[ 5.15305042e-03,  9.61020020e-04,  2.22072128e-02,
+         6.73355984e-03, -8.02385600e-03, -7.91503479e-03,
+        -5.26334562e-03,  4.01110731e-03,  2.36628919e-02,
+         8.90467249e-04],
+       [-1.80261846e-03,  1.54304152e-02, -8.74416798e-03,
+        -1.36573937e-02,  2.24740478e-03,  3.16663989e-02,
+         6.34074627e-03, -1.12000086e-03, -5.39078653e-03,
+         4.05008533e-03],
+       [-2.03591171e-03,  2.66667353e-02, -4.67762328e-03,
+         8.98556601e-04,  2.84687875e-03,  2.15262027e-03,
+         5.23740082e-03,  1.48446168e-02, -3.27711722e-03,
+         1.49829255e-02],
+       [ 1.32638658e-04, -1.49422672e-02, -1.33825312e-02,
+        -1.51529516e-02, -1.05120520e-03,  6.91198383e-03,
+         5.29176666e-03,  2.89213619e-03,  2.29947739e-02,
+        -4.77870922e-03],
+       [-1.64053432e-03, -9.23577965e-04,  7.72422924e-03,
+        -1.51382231e-02, -8.78766237e-03,  1.10402459e-02,
+         3.26264030e-03, -6.86939938e-03, -4.32033220e-03,
+         1.17919405e-02],
+       [-1.09943046e-02,  2.03947423e-03, -7.82886983e-04,
+        -5.17426707e-03,  4.02166597e-03, -5.58834061e-03,
+         1.28780712e-02, -7.45600043e-03, -5.01901982e-03,
+         7.85976087e-03],
+       [-5.95892210e-03, -1.78674462e-03, -9.89122433e-03,
+         7.83952355e-05,  5.16936431e-03,  2.52001731e-02,
+        -9.78701224e-03, -1.08492649e-02, -8.10731639e-03,
+        -1.30125926e-02],
+       [ 4.82111541e-03,  5.56438835e-03,  2.56501288e-03,
+        -4.49345393e-03,  6.44933857e-04, -1.29399720e-03,
+         5.07938558e-03,  1.78065439e-02,  7.77323288e-03,
+         6.31942268e-03],
+       [-7.16961030e-03,  2.69249899e-03, -1.49711543e-02,
+        -1.37320174e-02, -5.94538406e-03, -2.14444915e-02,
+         4.69008505e-03,  6.25196691e-03,  4.89893453e-03,
+         3.83482987e-03],
+       [ 3.33663470e-03,  3.66413195e-03,  8.13734684e-03,
+         3.26718512e-03,  1.79980722e-02, -4.40221939e-03,
+        -9.22645627e-03, -5.74194821e-03,  5.71187731e-03,
+         1.58518591e-02]], dtype=float64), Array([[-8.53466367e-03, -1.79988870e-02,  8.10906630e-03,
+        -2.04214688e-03,  1.73256807e-03, -1.05472236e-02,
+        -7.13934042e-03, -9.25036389e-05,  1.28038547e-02,
+        -3.13005418e-03]], dtype=float64)], 'bias': [Array([ 0.00774317,  0.00820618,  0.00097165,  0.00173412,  0.00928423,
+       -0.0030729 ,  0.00087346, -0.00217987,  0.00316654, -0.0002606 ],      dtype=float64), Array([ 0.01226054,  0.00734869, -0.00399706, -0.01514642,  0.01494738,
+       -0.00782287, -0.01535812,  0.00156552, -0.00266264,  0.01263654],      dtype=float64), Array([0.01112395], dtype=float64)]}), 'heat_transfer_coefficient_constant': Array([0.5], dtype=float64), 'critical_moisture': Array([0.07403168], dtype=float64), 'constant': Array([2., 5., 5., 5., 5.], dtype=float64), 'constant_jump': Array([5.], dtype=float64)})}
+---------------------------------------------------------------------------------------------------- 
+Initial guess of solid moisture [Array([0.1], dtype=float64)]
+---------------------------------------------------------------------------------------------------- 
+def objective(diff_args : Tuple[jnp.ndarray, List[jnp.ndarray], jnp.ndarray], pmap_args : Tuple[jnp.ndarray], 
+                key : jnp.ndarray, _product_list : List[str]) -> Tuple[jnp.ndarray, List[jnp.ndarray]] :
+    
+    # Function used only for training. For loop over the list of unique products 
+    meta_params_flatten, moist_init, moist_sigma = diff_args
+    moist_init = [moist_init[product_list.index(prod[:3])] for prod in _product_list]
+
+    asum, cost, *solution = zip(*[
+        _objective_pmap(meta_params_flatten, _args[0], moist_sigma, *_args[1:], pargs.recirculation, key)
+        for _args in zip(moist_init, *pmap_args)
+    ])
+
+    _kl = 0
+    for _mi in moist_init:
+        _kl += kl_div(_mi, moist_sigma, 0.1, 0.005)
+
+    asum = tree_util.tree_reduce(operator.add, tree_util.tree_map(jnp.sum, asum)) + jnp.sum(_kl)
+    return asum, cost, solution
+
+---------------------------------------------------------------------------------------------------- 
+Piecewise constant learning rate with boundaries [2000, 3000] and values [0.001, 0.0001, 1e-05]
+---------------------------------------------------------------------------------------------------- 
+NLP Options {'aux_args': Array([1931546366, 1873410571], dtype=uint32),
+ 'epochs': 100,
+ 'opt_state': None,
+ 'print_every_epoch': 1,
+ 'step_size': <function piecewise_constant.<locals>.schedule at 0x000001E4F4E42710>}
+---------------------------------------------------------------------------------------------------- 
+Started Optimization

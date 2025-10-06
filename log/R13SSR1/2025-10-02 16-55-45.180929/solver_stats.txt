@@ -1,0 +1,138 @@
+Local device count 1 
+local devices [CpuDevice(id=0)]
+---------------------------------------------------------------------------------------------------- 
+Optimization of ['R13SSR1'] with warm start from log\R13SSR4\2025-10-02 16-37-25.715803
+---------------------------------------------------------------------------------------------------- 
+Arguments
+{'atol': 1e-08,
+ 'cpus': 1,
+ 'gen': 200,
+ 'id': '',
+ 'iterations': 100,
+ 'load_dir': 'log\\R13SSR4\\2025-10-02 16-37-25.715803',
+ 'lr': 0.01,
+ 'msg': '',
+ 'mxstep': 10000,
+ 'optimize': 1,
+ 'partition': '',
+ 'products_test': '',
+ 'products_train': 'R13SSR1',
+ 'recirculation': 0,
+ 'rtol': 1e-06} 
+----------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------- 
+Product and simulation specific oven constants 
+R13 : {'density_air': 1,
+ 'density_particle': 2500,
+ 'density_product': 7.60855,
+ 'enthalpy_vaporization_water': 2000000.0,
+ 'equilibrium_moisture': 0.008,
+ 'ntimes': 15,
+ 'ny': 20,
+ 'nzones': 5,
+ 'product_height': 0.1,
+ 'radius_particle': 4e-06,
+ 'reverse_zone': 3,
+ 'specific_heat_capacity_air': 1047,
+ 'specific_heat_capacity_solid': 800}
+---------------------------------------------------------------------------------------------------- 
+Experiment specific controls and targets 
+R13SSR1 : Product(controls={'init_velocity_air': Array([0.097, 0.086, 0.115, 0.207, 0.207], dtype=float64), 'init_temperature_air': Array([492.44444444, 492.44444444, 506.33333333, 509.11111111,
+       509.11111111], dtype=float64), 'residence_time': Array([14.], dtype=float64, weak_type=True), 'init_moisture_air': Array([0.01, 0.01, 0.01, 0.01, 0.01], dtype=float64), 'recirculation_ratio': Array([0., 0., 0., 0., 0.], dtype=float64)}, targets={5: array([301.18545, 328.4849 , 330.88525, 331.0218 , 330.82675, 331.1192 ,
+       332.01615, 332.1526 , 332.1331 , 332.484  , 332.562  , 332.6594 ,
+       332.52295, 332.85425, 343.1604 , 358.54305, 374.51835, 389.95025,
+       404.1808 , 417.948  , 430.2925 , 436.67855, 439.0184 , 442.48925,
+       447.0542 , 449.33835, 451.05685, 455.6276 , 460.94815, 464.77145,
+       467.66375, 470.2924 , 472.87985, 471.88925, 461.3119 , 444.43445,
+       424.94635, 404.56145, 384.97925, 369.3213 , 358.7903 , 354.2196 ,
+       354.51125, 359.33455, 370.05125, 385.2176 , 401.6098 , 422.76865,
+       442.9116 , 457.91355, 468.1086 , 475.24405, 480.6961 , 484.64975,
+       487.5318 , 490.08945, 492.6653 , 495.0581 , 497.16785, 498.6337 ,
+       499.4767 , 499.2759 , 498.71385, 498.1718 , 497.6096 , 497.14765,
+       496.64545, 496.24365, 495.92225, 495.6007 , 495.33945, 495.1184 ,
+       495.038  , 494.9174 , 494.31425, 415.73065, 311.6518 , 305.24855,
+       302.60185, 302.76115, 302.4418 ])}, targets_mask={'mask': Array([0., 0., 0., 0., 0., 1., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+       0., 0., 0.], dtype=float64), 'target_map': Array([[0., 0., 0., ..., 0., 0., 0.],
+       [0., 0., 0., ..., 0., 0., 0.],
+       [0., 0., 0., ..., 0., 0., 0.],
+       ...,
+       [0., 0., 0., ..., 0., 0., 0.],
+       [0., 0., 0., ..., 0., 0., 0.],
+       [0., 0., 0., ..., 0., 0., 0.]], dtype=float64)})
+---------------------------------------------------------------------------------------------------- 
+def _mass_transfer_coefficient(x, B, c):
+    # negative value is eliminated in the final equation using exp
+
+    X, Ts, Y, Ta, Ye = x
+    
+    if isinstance(B, dict):
+
+        x =  jnp.append(jnp.append(X, jnp.append(Ts, jnp.append(Ta, Y))), c.density_product)
+        n = len(B["weight"])
+        for i, (weight, bias) in enumerate(zip(B["weight"], B["bias"])):
+            x = jnp.dot(weight, x) + bias
+            if i < n - 1:
+                x = jnp.tanh(x)
+
+        return jnp.exp(x)
+    else: return B
+
+---------------------------------------------------------------------------------------------------- 
+def _heat_transfer_coefficient(x, A, c):
+    # negative value is eliminated in the final equation using exp
+    
+    X, Ts, Y, Ta, Ye = x
+    
+    if isinstance(A, dict):
+        x =  jnp.append(jnp.append(X, jnp.append(Ts, jnp.append(Ta, Y))), c.density_product)
+        n = len(A["weight"])
+        for i, (weight, bias) in enumerate(zip(A["weight"], A["bias"])):
+            x = jnp.dot(weight, x) + bias
+            if i < n - 1 :
+                x = jnp.tanh(x) 
+        
+        return jnp.exp(x)
+    else: return A
+
+---------------------------------------------------------------------------------------------------- 
+def moisture_content(T, density_air, relative_humidity = 1):
+    # calculates the equilibrium moisture content in the air at given temperature
+    # assumes ideal gas law
+    mw_air = 28.96e-3 # kg/mol molecular weight of air
+    mw_water = 18.01e-3 # kg/mol molecular weight of water 
+    P_sat = saturated_pressure(T) # Pa
+    return vapor_pressure_to_moisture(P_sat, T, density_air, relative_humidity)
+
+---------------------------------------------------------------------------------------------------- 
+scaled_reaction_rate = lambda A, k0, T : k0 * jnp.exp( - A / 1.98 / unscale_states(T, temperature_max, temperature_min))
+
+---------------------------------------------------------------------------------------------------- 
+Training Experiments target heights
+R13SSR1 : dict_keys([5])
+Testing experiments target heights
+R13SSR1 : dict_keys([5])
+---------------------------------------------------------------------------------------------------- 
+def _objective(meta_params : dict, solid_moisture_init : jnp.ndarray, solid_moisture_sigma : jnp.ndarray, constants : Constants, 
+                target : jnp.ndarray, target_mask : jnp.ndarray, controls : Controls, solid_temperature_init : jnp.ndarray, 
+                recirculation : bool, key) -> Tuple[jnp.ndarray]:
+    
+    ny = constants.ny
+    xinit = jnp.column_stack((
+        solid_moisture_init * jnp.ones(ny) + solid_moisture_sigma * jrandom.normal(key, shape = (ny, )), # moisture 
+        solid_temperature_init * jnp.ones(ny), # temperature
+        jnp.zeros(shape = (ny, )) # cure 
+    ))
+
+    _parameters = meta_params["parameters"]
+    _parameters["reaction_rate"] = 2.33 * 10**7 # Do not optimize this yet
+    _parameters["activation_energy"] = 20. * 10**3 # Do not optimize this yet
+
+    # oven_dynamics discards the provided initial condition (It is assumed that the initial condition are the values of states at t = -1)
+    solution = oven_dynamics(xinit, _parameters, controls, constants, reverse_zone = constants.reverse_zone, nzones = constants.nzones, recirculation = recirculation)
+    moisture_solid, temperature_solid, cure, moisture_air, temperature_air, t_event = tree_util.tree_map(jnp.vstack, solution)
+
+    # mse_cost = mean squared error cost. total_cost = mse_cost + regularization cost
+    mse_cost = jnp.sum((temperature_solid * target_mask - target[1:])**2 * (ny - jnp.count_nonzero(target_mask)))
+    total_cost = mse_cost
+    return total_cost, mse_cost, xinit, *(moisture_solid, temperature_solid, cure, moisture_air, temperature_air, t_event)
+

@@ -1,0 +1,1879 @@
+Local device count 1 
+local devices [CpuDevice(id=0)]
+---------------------------------------------------------------------------------------------------- 
+Optimization of ['R13SSR4'] with warm start from None
+---------------------------------------------------------------------------------------------------- 
+Arguments
+{'atol': 1e-08,
+ 'cpus': 1,
+ 'gen': 200,
+ 'id': '',
+ 'iterations': 100,
+ 'load_dir': '.',
+ 'lr': 0.001,
+ 'msg': '',
+ 'mxstep': 10000,
+ 'optimize': 1,
+ 'partition': '',
+ 'products_test': 'R13SSR4',
+ 'products_train': 'R13SSR4',
+ 'recirculation': 0,
+ 'rtol': 1e-06} 
+----------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------- 
+Product and simulation specific oven constants 
+R13 : {'density_air': 1,
+ 'density_particle': 2500,
+ 'density_product': 7.60855,
+ 'enthalpy_vaporization_water': 2000000.0,
+ 'equilibrium_moisture': 0.008,
+ 'ntimes': 15,
+ 'ny': 20,
+ 'nzones': 5,
+ 'product_height': 0.1,
+ 'radius_particle': 4e-06,
+ 'reverse_zone': 3,
+ 'specific_heat_capacity_air': 1047,
+ 'specific_heat_capacity_solid': 800}
+---------------------------------------------------------------------------------------------------- 
+Experiment specific controls and targets 
+R13SSR4 : Product(controls={'init_velocity_air': Array([0.087, 0.097, 0.154, 0.207, 0.207], dtype=float64), 'init_temperature_air': Array([484.11111111, 481.33333333, 500.77777778, 500.77777778,
+       500.77777778], dtype=float64), 'residence_time': Array([14.], dtype=float64), 'init_moisture_air': Array([0.01, 0.01, 0.01, 0.01, 0.01], dtype=float64), 'recirculation_ratio': Array([0., 0., 0., 0., 0.], dtype=float64)}, targets={5: array([303.15975, 330.49455, 332.1721 , 332.406  , 332.28905, 332.1331 ,
+       331.9382 , 332.445  , 332.9907 , 333.0296 , 332.73715, 332.6787 ,
+       332.7762 , 332.77625, 333.12705, 331.50925, 331.4118 , 332.5422 ,
+       342.3779 , 356.5566 , 371.71965, 383.22035, 394.49505, 408.18555,
+       417.93835, 423.74725, 429.8976 , 439.891  , 448.15855, 454.0147 ,
+       458.905  , 463.3526 , 467.29535, 460.3205 , 440.83385, 413.00715,
+       385.1415 , 365.291  , 358.0888 , 362.95505, 378.90165, 400.5107 ,
+       421.1597 , 437.6301 , 449.7088 , 458.1567 , 464.10265, 468.9364 ,
+       472.29265, 474.41485, 476.1927 , 477.9699 , 479.50445, 480.85675,
+       482.1078 , 483.25755, 484.34655, 485.3546 , 486.0804 , 486.54405,
+       486.64495, 486.7256 , 486.84655, 486.8667 , 486.8667 , 486.8667 ,
+       486.8667 , 486.8667 , 486.8264 , 486.84655, 486.8264 , 486.7861 ,
+       486.70555, 472.4738 , 340.60955, 306.33025, 299.1855 , 296.4629 ,
+       294.93855, 294.03475, 293.49195, 294.557  , 293.9744 , 293.35125,
+       293.95435, 293.39145, 292.74795])}, targets_mask={'mask': Array([0., 0., 0., 0., 0., 1., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+       0., 0., 0.], dtype=float64), 'target_map': Array([[0., 0., 0., ..., 0., 0., 0.],
+       [0., 0., 0., ..., 0., 0., 0.],
+       [0., 0., 0., ..., 0., 0., 0.],
+       ...,
+       [0., 0., 0., ..., 0., 0., 0.],
+       [0., 0., 0., ..., 0., 0., 0.],
+       [0., 0., 0., ..., 0., 0., 0.]], dtype=float64)})
+---------------------------------------------------------------------------------------------------- 
+def _mass_transfer_coefficient(x, B, c):
+    # negative value is eliminated in the final equation using exp
+
+    X, Ts, Y, Ta, Ye = x
+    
+    if isinstance(B, dict):
+
+        x =  jnp.append(jnp.append(X, jnp.append(Ts, jnp.append(Ta, Y))), c.density_product)
+        n = len(B["weight"])
+        for i, (weight, bias) in enumerate(zip(B["weight"], B["bias"])):
+            x = jnp.dot(weight, x) + bias
+            if i < n - 1:
+                x = jnp.tanh(x)
+
+        return jnp.exp(x)
+    else: return B
+
+---------------------------------------------------------------------------------------------------- 
+def _heat_transfer_coefficient(x, A, c):
+    # negative value is eliminated in the final equation using exp
+    
+    X, Ts, Y, Ta, Ye = x
+    
+    if isinstance(A, dict):
+        x =  jnp.append(jnp.append(X, jnp.append(Ts, jnp.append(Ta, Y))), c.density_product)
+        n = len(A["weight"])
+        for i, (weight, bias) in enumerate(zip(A["weight"], A["bias"])):
+            x = jnp.dot(weight, x) + bias
+            if i < n - 1 :
+                x = jnp.tanh(x) 
+        
+        return jnp.exp(x)
+    else: return A
+
+---------------------------------------------------------------------------------------------------- 
+def moisture_content(T, density_air, relative_humidity = 1):
+    # calculates the equilibrium moisture content in the air at given temperature
+    # assumes ideal gas law
+    mw_air = 28.96e-3 # kg/mol molecular weight of air
+    mw_water = 18.01e-3 # kg/mol molecular weight of water 
+    P_sat = saturated_pressure(T) # Pa
+    return vapor_pressure_to_moisture(P_sat, T, density_air, relative_humidity)
+
+---------------------------------------------------------------------------------------------------- 
+scaled_reaction_rate = lambda A, k0, T : k0 * jnp.exp( - A / 1.98 / unscale_states(T, temperature_max, temperature_min))
+
+---------------------------------------------------------------------------------------------------- 
+Training Experiments target heights
+R13SSR4 : dict_keys([5])
+Testing experiments target heights
+R13SSR4 : dict_keys([5])
+---------------------------------------------------------------------------------------------------- 
+def _objective(meta_params : dict, solid_moisture_init : jnp.ndarray, solid_moisture_sigma : jnp.ndarray, constants : Constants, 
+                target : jnp.ndarray, target_mask : jnp.ndarray, controls : Controls, solid_temperature_init : jnp.ndarray, 
+                recirculation : bool, key) -> Tuple[jnp.ndarray]:
+    
+    ny = constants.ny
+    xinit = jnp.column_stack((
+        solid_moisture_init * jnp.ones(ny) + solid_moisture_sigma * jrandom.normal(key, shape = (ny, )), # moisture 
+        solid_temperature_init * jnp.ones(ny), # temperature
+        jnp.zeros(shape = (ny, )) # cure 
+    ))
+
+    _parameters = meta_params["parameters"]
+    _parameters["reaction_rate"] = 2.33 * 10**7 # Do not optimize this yet
+    _parameters["activation_energy"] = 20. * 10**3 # Do not optimize this yet
+
+    # oven_dynamics discards the provided initial condition (It is assumed that the initial condition are the values of states at t = -1)
+    solution = oven_dynamics(xinit, _parameters, controls, constants, reverse_zone = constants.reverse_zone, nzones = constants.nzones, recirculation = recirculation)
+    moisture_solid, temperature_solid, cure, moisture_air, temperature_air, t_event = tree_util.tree_map(jnp.vstack, solution)
+
+    # mse_cost = mean squared error cost. total_cost = mse_cost + regularization cost
+    mse_cost = jnp.sum((temperature_solid * target_mask - target[1:])**2 * (ny - jnp.count_nonzero(target_mask)))
+    total_cost = mse_cost
+    return total_cost, mse_cost, xinit, *(moisture_solid, temperature_solid, cure, moisture_air, temperature_air, t_event)
+
+---------------------------------------------------------------------------------------------------- 
+Initial guess of parameters {'parameters': Parameters(params={'mass_transfer_coefficient_falling': defaultdict(<class 'list'>, {'weight': [Array([[ 0.00271846, -0.00221971,  0.00524635, -0.00582695, -0.00499798],
+       [-0.01332438, -0.00715606, -0.00231319,  0.00983229, -0.01126742],
+       [ 0.02126611, -0.00093819,  0.00286677, -0.00305304, -0.00476762],
+       [-0.00717686, -0.00202819, -0.01123574, -0.00293377,  0.00307205],
+       [ 0.01219444,  0.00659236, -0.00093308, -0.00197792, -0.01545449],
+       [-0.00212836, -0.00993648,  0.00387322, -0.00629826,  0.00046373],
+       [-0.01007371, -0.0180889 , -0.02001135, -0.00998022, -0.01770827],
+       [ 0.01301542,  0.00983185, -0.00457604,  0.01229619,  0.00953824],
+       [ 0.01840678, -0.00122476,  0.01160498,  0.02489938, -0.01162747],
+       [-0.0009059 , -0.00436782, -0.00269817,  0.01199049,  0.00463232]],      dtype=float64), Array([[-1.17166272e-02,  1.18439915e-02, -6.54599611e-03,
+        -9.67287233e-03,  1.38260311e-02, -2.85808155e-02,
+        -5.04328744e-03,  7.86806072e-03, -2.09543967e-02,
+         4.93921811e-03],
+       [-1.26754078e-03,  3.71941279e-03,  2.05090838e-03,
+        -5.82160562e-03, -3.92664088e-03,  2.59951837e-03,
+         1.35400578e-02, -2.68616597e-03,  9.33500451e-03,
+        -1.52420259e-02],
+       [-7.22390652e-03,  8.37965201e-03,  8.26144035e-03,
+        -1.01641366e-02,  1.13020942e-02,  9.95546547e-03,
+         3.62033572e-03,  3.87298081e-03, -1.43879113e-02,
+         2.47027029e-03],
+       [-4.51901854e-03, -2.48711857e-03, -5.43480284e-03,
+         4.62321482e-03,  1.21875705e-04, -9.00458785e-03,
+        -1.04983042e-02, -5.83256195e-03, -1.41181309e-02,
+         1.68635957e-03],
+       [ 8.63539071e-04, -1.30289143e-02, -7.72673855e-04,
+         7.23215181e-03, -8.12740966e-03,  6.73156814e-03,
+         1.52174641e-02,  9.43783620e-03,  6.78677944e-03,
+         2.87952941e-03],
+       [ 2.47787390e-03,  2.67950459e-03, -1.38393162e-03,
+        -9.47461215e-04, -1.07274907e-02,  1.38252326e-02,
+        -3.59931951e-03,  2.00473469e-03, -1.25082567e-02,
+         7.33850478e-03],
+       [ 7.84088576e-03,  1.30789439e-02,  1.68642163e-03,
+         5.09139815e-03,  4.17256896e-03,  1.40380761e-02,
+         1.00333663e-03, -7.74356310e-03, -1.83175936e-02,
+        -5.69058416e-03],
+       [ 1.21569325e-02, -9.67576876e-03, -7.43663415e-03,
+        -7.20552719e-05, -4.72400530e-04, -3.21778087e-02,
+        -8.28436445e-03,  2.94682664e-03,  1.66030232e-02,
+         3.24112978e-03],
+       [ 5.46391596e-03,  2.06055260e-02, -1.27476609e-02,
+        -1.51933950e-03, -1.74114110e-03,  1.18129748e-02,
+         1.02296968e-02,  5.22906710e-03,  1.30305574e-02,
+         1.97620746e-02],
+       [ 9.67219372e-03, -4.75472929e-04, -2.92547530e-03,
+         7.78812421e-03,  3.57918494e-03,  1.22401429e-02,
+        -2.07094367e-02,  3.15417430e-03, -4.67993699e-03,
+        -1.81451176e-02]], dtype=float64), Array([[ 0.00133239, -0.0095473 , -0.00929099, -0.00082596, -0.00946257,
+         0.0030406 , -0.01823037,  0.00754918,  0.00024248, -0.00711746]],      dtype=float64)], 'bias': [Array([ 0.01048952,  0.01083855, -0.00320652,  0.00702542, -0.00494052,
+        0.00647191, -0.00884282, -0.00881121,  0.00606508,  0.01529383],      dtype=float64), Array([-0.01578262,  0.00852604,  0.00283512,  0.01225962,  0.00446697,
+        0.00030118,  0.01318117,  0.02149447, -0.0135099 , -0.00226544],      dtype=float64), Array([-0.00834291], dtype=float64)]}), 'mass_transfer_coefficient_constant': Array([160.], dtype=float64), 'heat_transfer_coefficient_falling': defaultdict(<class 'list'>, {'weight': [Array([[-0.00724685, -0.01618596,  0.00218296, -0.00700299, -0.00317363],
+       [ 0.00013072,  0.01482621, -0.01537637,  0.01821624, -0.02252088],
+       [-0.00592651, -0.01329884,  0.00924959, -0.00345155, -0.00316895],
+       [-0.00199734, -0.00861019,  0.0124686 , -0.00704671,  0.00169946],
+       [ 0.00670148,  0.00204135,  0.00023319,  0.0042336 , -0.01049741],
+       [ 0.01290697, -0.00044366, -0.0015932 ,  0.00226697,  0.00439212],
+       [ 0.01446076,  0.014174  ,  0.00527482,  0.01947832,  0.00732787],
+       [ 0.00345952,  0.00463592, -0.0162369 ,  0.00403397, -0.00648092],
+       [ 0.00130429, -0.00472191, -0.00111818,  0.00721872, -0.01111588],
+       [ 0.00433874, -0.00157516,  0.00188875,  0.00413284, -0.00139073]],      dtype=float64), Array([[ 5.15305042e-03,  9.61020020e-04,  2.22072128e-02,
+         6.73355984e-03, -8.02385600e-03, -7.91503479e-03,
+        -5.26334562e-03,  4.01110731e-03,  2.36628919e-02,
+         8.90467249e-04],
+       [-1.80261846e-03,  1.54304152e-02, -8.74416798e-03,
+        -1.36573937e-02,  2.24740478e-03,  3.16663989e-02,
+         6.34074627e-03, -1.12000086e-03, -5.39078653e-03,
+         4.05008533e-03],
+       [-2.03591171e-03,  2.66667353e-02, -4.67762328e-03,
+         8.98556601e-04,  2.84687875e-03,  2.15262027e-03,
+         5.23740082e-03,  1.48446168e-02, -3.27711722e-03,
+         1.49829255e-02],
+       [ 1.32638658e-04, -1.49422672e-02, -1.33825312e-02,
+        -1.51529516e-02, -1.05120520e-03,  6.91198383e-03,
+         5.29176666e-03,  2.89213619e-03,  2.29947739e-02,
+        -4.77870922e-03],
+       [-1.64053432e-03, -9.23577965e-04,  7.72422924e-03,
+        -1.51382231e-02, -8.78766237e-03,  1.10402459e-02,
+         3.26264030e-03, -6.86939938e-03, -4.32033220e-03,
+         1.17919405e-02],
+       [-1.09943046e-02,  2.03947423e-03, -7.82886983e-04,
+        -5.17426707e-03,  4.02166597e-03, -5.58834061e-03,
+         1.28780712e-02, -7.45600043e-03, -5.01901982e-03,
+         7.85976087e-03],
+       [-5.95892210e-03, -1.78674462e-03, -9.89122433e-03,
+         7.83952355e-05,  5.16936431e-03,  2.52001731e-02,
+        -9.78701224e-03, -1.08492649e-02, -8.10731639e-03,
+        -1.30125926e-02],
+       [ 4.82111541e-03,  5.56438835e-03,  2.56501288e-03,
+        -4.49345393e-03,  6.44933857e-04, -1.29399720e-03,
+         5.07938558e-03,  1.78065439e-02,  7.77323288e-03,
+         6.31942268e-03],
+       [-7.16961030e-03,  2.69249899e-03, -1.49711543e-02,
+        -1.37320174e-02, -5.94538406e-03, -2.14444915e-02,
+         4.69008505e-03,  6.25196691e-03,  4.89893453e-03,
+         3.83482987e-03],
+       [ 3.33663470e-03,  3.66413195e-03,  8.13734684e-03,
+         3.26718512e-03,  1.79980722e-02, -4.40221939e-03,
+        -9.22645627e-03, -5.74194821e-03,  5.71187731e-03,
+         1.58518591e-02]], dtype=float64), Array([[-8.53466367e-03, -1.79988870e-02,  8.10906630e-03,
+        -2.04214688e-03,  1.73256807e-03, -1.05472236e-02,
+        -7.13934042e-03, -9.25036389e-05,  1.28038547e-02,
+        -3.13005418e-03]], dtype=float64)], 'bias': [Array([ 0.00774317,  0.00820618,  0.00097165,  0.00173412,  0.00928423,
+       -0.0030729 ,  0.00087346, -0.00217987,  0.00316654, -0.0002606 ],      dtype=float64), Array([ 0.01226054,  0.00734869, -0.00399706, -0.01514642,  0.01494738,
+       -0.00782287, -0.01535812,  0.00156552, -0.00266264,  0.01263654],      dtype=float64), Array([0.01112395], dtype=float64)]}), 'heat_transfer_coefficient_constant': Array([0.5], dtype=float64), 'critical_moisture': Array([0.07403168], dtype=float64), 'constant': Array([2., 5., 5., 5., 5.], dtype=float64), 'constant_jump': Array([5.], dtype=float64)})}
+---------------------------------------------------------------------------------------------------- 
+Initial guess of solid moisture [Array([0.1], dtype=float64)]
+---------------------------------------------------------------------------------------------------- 
+def objective(diff_args : Tuple[jnp.ndarray, List[jnp.ndarray], jnp.ndarray], pmap_args : Tuple[jnp.ndarray], 
+                key : jnp.ndarray, _product_list : List[str]) -> Tuple[jnp.ndarray, List[jnp.ndarray]] :
+    
+    # Function used only for training. For loop over the list of unique products 
+    meta_params_flatten, moist_init, moist_sigma = diff_args
+    moist_init = [moist_init[product_list.index(prod[:3])] for prod in _product_list]
+
+    asum, cost, *solution = zip(*[
+        _objective_pmap(meta_params_flatten, _args[0], moist_sigma, *_args[1:], pargs.recirculation, key)
+        for _args in zip(moist_init, *pmap_args)
+    ])
+
+    _kl = 0
+    for _mi in moist_init:
+        _kl += kl_div(_mi, moist_sigma, 0.1, 0.005)
+
+    asum = tree_util.tree_reduce(operator.add, tree_util.tree_map(jnp.sum, asum)) + jnp.sum(_kl)
+    return asum, cost, solution
+
+---------------------------------------------------------------------------------------------------- 
+Piecewise constant learning rate with boundaries [2000, 3000] and values [0.001, 0.0001, 1e-05]
+---------------------------------------------------------------------------------------------------- 
+NLP Options {'aux_args': Array([1931546366, 1873410571], dtype=uint32),
+ 'epochs': 100,
+ 'opt_state': None,
+ 'print_every_epoch': 1,
+ 'step_size': <function piecewise_constant.<locals>.schedule at 0x000001CB8DABE710>}
+---------------------------------------------------------------------------------------------------- 
+Started Optimization
+Critical moisture ratio [0.07403168]
+Mass transfer coefficient constant [160.]
+Heat transfer coefficient constant [0.5]
+Inlet moisture of R13SSR4 is (Array([0.1], dtype=float64), Array([0.003], dtype=float64))(mean, sigma), mse cost 1.907285269157068, total cost 2.0981108929230587
+----------------------------------------------------------------------------------------------------
+  0%|          | 0/100 [06:27<?, ?it/s]
+epoch 0, training loss 2.0981108929230587, gradients norm (Array(279.32302422, dtype=float64), [Array(278.88161688, dtype=float64)], Array(79.09084278, dtype=float64)), testing loss 2.0981108929230587
+Critical moisture ratio [0.07503168]
+Mass transfer coefficient constant [159.99900002]
+Heat transfer coefficient constant [0.501]
+Inlet moisture of R13SSR4 is (Array([0.099], dtype=float64), Array([0.004], dtype=float64))(mean, sigma), mse cost 0.9517129611296768, total cost 1.0148565124538316
+----------------------------------------------------------------------------------------------------
+  1%|1         | 1/100 [06:32<10:38:49, 387.16s/it]
+epoch 1, training loss 1.0148565124538316, gradients norm (Array(107.52019017, dtype=float64), [Array(67.40662499, dtype=float64)], Array(169.00380391, dtype=float64)), testing loss 1.0148565124538316
+Critical moisture ratio [0.0759245]
+Mass transfer coefficient constant [159.99823606]
+Heat transfer coefficient constant [0.50185257]
+Inlet moisture of R13SSR4 is (Array([0.09817381], dtype=float64), Array([0.00495794], dtype=float64))(mean, sigma), mse cost 1.3348483805926787, total cost 1.4016190515283034
+----------------------------------------------------------------------------------------------------
+  2%|2         | 2/100 [06:37<4:25:18, 162.43s/it]
+epoch 2, training loss 1.4016190515283034, gradients norm (Array(110.1655159, dtype=float64), [Array(183.19474226, dtype=float64)], Array(174.62762564, dtype=float64)), testing loss 1.4016190515283034
+Critical moisture ratio [0.07635096]
+Mass transfer coefficient constant [159.99754822]
+Heat transfer coefficient constant [0.50239629]
+Inlet moisture of R13SSR4 is (Array([0.0979797], dtype=float64), Array([0.00506181], dtype=float64))(mean, sigma), mse cost 0.9155004130222585, total cost 0.997285150028342
+----------------------------------------------------------------------------------------------------
+  3%|3         | 3/100 [06:42<2:26:54, 90.87s/it]
+epoch 3, training loss 0.997285150028342, gradients norm (Array(22.27471459, dtype=float64), [Array(103.09476931, dtype=float64)], Array(18.75118972, dtype=float64)), testing loss 0.997285150028342
+Critical moisture ratio [0.07665887]
+Mass transfer coefficient constant [159.99677882]
+Heat transfer coefficient constant [0.50281748]
+Inlet moisture of R13SSR4 is (Array([0.09799616], dtype=float64), Array([0.0051041], dtype=float64))(mean, sigma), mse cost 1.3877785604865054, total cost 1.4685165366057074
+----------------------------------------------------------------------------------------------------
+  4%|4         | 4/100 [06:48<1:30:59, 56.87s/it]
+epoch 4, training loss 1.4685165366057074, gradients norm (Array(211.1468644, dtype=float64), [Array(130.66347114, dtype=float64)], Array(267.76756533, dtype=float64)), testing loss 1.4685165366057074
+Critical moisture ratio [0.07717689]
+Mass transfer coefficient constant [159.99616096]
+Heat transfer coefficient constant [0.5034228]
+Inlet moisture of R13SSR4 is (Array([0.09782085], dtype=float64), Array([0.00473445], dtype=float64))(mean, sigma), mse cost 1.195626914099297, total cost 1.293473044636713
+----------------------------------------------------------------------------------------------------
+  5%|5         | 5/100 [06:54<1:00:44, 38.36s/it]
+epoch 5, training loss 1.293473044636713, gradients norm (Array(112.50573416, dtype=float64), [Array(199.63563577, dtype=float64)], Array(82.54586952, dtype=float64)), testing loss 1.293473044636713
+Critical moisture ratio [0.07745772]
+Mass transfer coefficient constant [159.99555235]
+Heat transfer coefficient constant [0.50385059]
+Inlet moisture of R13SSR4 is (Array([0.09793097], dtype=float64), Array([0.00430987], dtype=float64))(mean, sigma), mse cost 1.163151835492646, total cost 1.2687994248643246
+----------------------------------------------------------------------------------------------------
+  6%|6         | 6/100 [07:00<43:06, 27.51s/it]
+epoch 6, training loss 1.2687994248643246, gradients norm (Array(179.11490639, dtype=float64), [Array(96.16617134, dtype=float64)], Array(33.51907963, dtype=float64)), testing loss 1.2687994248643246
+Critical moisture ratio [0.07788906]
+Mass transfer coefficient constant [159.99508523]
+Heat transfer coefficient constant [0.50438325]
+Inlet moisture of R13SSR4 is (Array([0.09791364], dtype=float64), Array([0.00389592], dtype=float64))(mean, sigma), mse cost 1.5574349409594164, total cost 1.6975643995414786
+----------------------------------------------------------------------------------------------------
+  7%|7         | 7/100 [07:05<31:29, 20.32s/it]
+epoch 7, training loss 1.6975643995414786, gradients norm (Array(235.09774136, dtype=float64), [Array(318.47334553, dtype=float64)], Array(180.26206402, dtype=float64)), testing loss 1.6975643995414786
+Critical moisture ratio [0.07798865]
+Mass transfer coefficient constant [159.99467692]
+Heat transfer coefficient constant [0.50468796]
+Inlet moisture of R13SSR4 is (Array([0.09819287], dtype=float64), Array([0.00335386], dtype=float64))(mean, sigma), mse cost 1.3536249047836177, total cost 1.5432322592498293
+----------------------------------------------------------------------------------------------------
+  8%|8         | 8/100 [07:10<23:47, 15.51s/it]
+epoch 8, training loss 1.5432322592498293, gradients norm (Array(94.1133737, dtype=float64), [Array(166.38614814, dtype=float64)], Array(11.07360566, dtype=float64)), testing loss 1.5432322592498293
+Critical moisture ratio [0.07798427]
+Mass transfer coefficient constant [159.99430029]
+Heat transfer coefficient constant [0.50491145]
+Inlet moisture of R13SSR4 is (Array([0.09857344], dtype=float64), Array([0.00285996], dtype=float64))(mean, sigma), mse cost 1.2398966480807694, total cost 1.5028152569703015
+----------------------------------------------------------------------------------------------------
+  9%|9         | 9/100 [07:15<18:37, 12.28s/it]
+epoch 9, training loss 1.5028152569703015, gradients norm (Array(200.33647242, dtype=float64), [Array(143.04663404, dtype=float64)], Array(32.82916125, dtype=float64)), testing loss 1.5028152569703015
+Critical moisture ratio [0.07815948]
+Mass transfer coefficient constant [159.99395799]
+Heat transfer coefficient constant [0.5052789]
+Inlet moisture of R13SSR4 is (Array([0.09878401], dtype=float64), Array([0.00245819], dtype=float64))(mean, sigma), mse cost 0.9862949009236956, total cost 1.3467325856061465
+----------------------------------------------------------------------------------------------------
+ 10%|#         | 10/100 [07:19<14:46,  9.86s/it]
+epoch 10, training loss 1.3467325856061465, gradients norm (Array(156.33075482, dtype=float64), [Array(107.51581624, dtype=float64)], Array(166.87347657, dtype=float64)), testing loss 1.3467325856061465
+Critical moisture ratio [0.0784439]
+Mass transfer coefficient constant [159.9937063]
+Heat transfer coefficient constant [0.50572872]
+Inlet moisture of R13SSR4 is (Array([0.09888222], dtype=float64), Array([0.00230078], dtype=float64))(mean, sigma), mse cost 1.0195404600571458, total cost 1.4265909443026277
+----------------------------------------------------------------------------------------------------
+ 11%|#1        | 11/100 [07:24<12:21,  8.33s/it]
+epoch 11, training loss 1.4265909443026277, gradients norm (Array(42.21799826, dtype=float64), [Array(2.55343812, dtype=float64)], Array(305.97132274, dtype=float64)), testing loss 1.4265909443026277
+Critical moisture ratio [0.07873484]
+Mass transfer coefficient constant [159.99342503]
+Heat transfer coefficient constant [0.50616831]
+Inlet moisture of R13SSR4 is (Array([0.0989726], dtype=float64), Array([0.00245279], dtype=float64))(mean, sigma), mse cost 1.0094536735778044, total cost 1.363099071390892
+----------------------------------------------------------------------------------------------------
+ 12%|#2        | 12/100 [07:29<10:35,  7.22s/it]
+epoch 12, training loss 1.363099071390892, gradients norm (Array(3.42181198, dtype=float64), [Array(44.52061164, dtype=float64)], Array(259.80619331, dtype=float64)), testing loss 1.363099071390892
+Critical moisture ratio [0.07899421]
+Mass transfer coefficient constant [159.99314511]
+Heat transfer coefficient constant [0.50656719]
+Inlet moisture of R13SSR4 is (Array([0.09908995], dtype=float64), Array([0.00278346], dtype=float64))(mean, sigma), mse cost 1.2112969552688833, total cost 1.4685558014475448
+----------------------------------------------------------------------------------------------------
+ 13%|#3        | 13/100 [07:33<09:24,  6.49s/it]
+epoch 13, training loss 1.4685558014475448, gradients norm (Array(73.35917286, dtype=float64), [Array(109.75237943, dtype=float64)], Array(110.59121401, dtype=float64)), testing loss 1.4685558014475448
+Critical moisture ratio [0.07916429]
+Mass transfer coefficient constant [159.99283437]
+Heat transfer coefficient constant [0.50689223]
+Inlet moisture of R13SSR4 is (Array([0.09928207], dtype=float64), Array([0.00316429], dtype=float64))(mean, sigma), mse cost 0.9450885419817393, total cost 1.1131607432647812
+----------------------------------------------------------------------------------------------------
+ 14%|#4        | 14/100 [07:37<08:14,  5.75s/it]
+epoch 14, training loss 1.1131607432647812, gradients norm (Array(49.0413902, dtype=float64), [Array(77.74355799, dtype=float64)], Array(169.65567104, dtype=float64)), testing loss 1.1131607432647812
+Critical moisture ratio [0.07927593]
+Mass transfer coefficient constant [159.99241946]
+Heat transfer coefficient constant [0.50715344]
+Inlet moisture of R13SSR4 is (Array([0.09951657], dtype=float64), Array([0.00362582], dtype=float64))(mean, sigma), mse cost 1.1385781014879481, total cost 1.2275411593139811
+----------------------------------------------------------------------------------------------------
+ 15%|#5        | 15/100 [07:41<07:18,  5.15s/it]
+epoch 15, training loss 1.2275411593139811, gradients norm (Array(181.72351353, dtype=float64), [Array(162.17291199, dtype=float64)], Array(52.68960609, dtype=float64)), testing loss 1.2275411593139811
+Critical moisture ratio [0.07952058]
+Mass transfer coefficient constant [159.99205923]
+Heat transfer coefficient constant [0.50753223]
+Inlet moisture of R13SSR4 is (Array([0.09959594], dtype=float64), Array([0.00400236], dtype=float64))(mean, sigma), mse cost 0.9114742594199973, total cost 0.9576711727477246
+----------------------------------------------------------------------------------------------------
+ 16%|#6        | 16/100 [07:45<06:42,  4.79s/it]
+epoch 16, training loss 0.9576711727477246, gradients norm (Array(64.22265004, dtype=float64), [Array(47.98894121, dtype=float64)], Array(61.7851368, dtype=float64)), testing loss 0.9576711727477246
+Critical moisture ratio [0.0797938]
+Mass transfer coefficient constant [159.99172368]
+Heat transfer coefficient constant [0.50792306]
+Inlet moisture of R13SSR4 is (Array([0.09963028], dtype=float64), Array([0.00438982], dtype=float64))(mean, sigma), mse cost 0.9226631509092464, total cost 0.9409568836121828
+----------------------------------------------------------------------------------------------------
+ 17%|#7        | 17/100 [07:49<06:18,  4.56s/it]
+epoch 17, training loss 0.9409568836121828, gradients norm (Array(65.25693982, dtype=float64), [Array(50.40067212, dtype=float64)], Array(40.14473811, dtype=float64)), testing loss 0.9409568836121828
+Critical moisture ratio [0.08009402]
+Mass transfer coefficient constant [159.99143439]
+Heat transfer coefficient constant [0.50832432]
+Inlet moisture of R13SSR4 is (Array([0.09962178], dtype=float64), Array([0.00477204], dtype=float64))(mean, sigma), mse cost 1.035996264471163, total cost 1.04096851983223
+----------------------------------------------------------------------------------------------------
+ 18%|#8        | 18/100 [07:56<06:10,  4.52s/it]
+epoch 18, training loss 1.04096851983223, gradients norm (Array(112.77781337, dtype=float64), [Array(97.52262374, dtype=float64)], Array(58.80791784, dtype=float64)), testing loss 1.04096851983223
+Critical moisture ratio [0.0804541]
+Mass transfer coefficient constant [159.99110345]
+Heat transfer coefficient constant [0.50877312]
+Inlet moisture of R13SSR4 is (Array([0.09953771], dtype=float64), Array([0.00507227], dtype=float64))(mean, sigma), mse cost 2.026739514204852, total cost 2.031221748669242
+----------------------------------------------------------------------------------------------------
+ 19%|#9        | 19/100 [08:04<06:58,  5.16s/it]
+epoch 19, training loss 2.031221748669242, gradients norm (Array(250.6369113, dtype=float64), [Array(269.07445083, dtype=float64)], Array(290.91603809, dtype=float64)), testing loss 2.031221748669242
+Critical moisture ratio [0.08056624]
+Mass transfer coefficient constant [159.99110383]
+Heat transfer coefficient constant [0.50907149]
+Inlet moisture of R13SSR4 is (Array([0.09966367], dtype=float64), Array([0.00511286], dtype=float64))(mean, sigma), mse cost 1.029712038252503, total cost 1.0324801230077927
+----------------------------------------------------------------------------------------------------
+ 20%|##        | 20/100 [08:09<08:01,  6.02s/it]
+epoch 20, training loss 1.0324801230077927, gradients norm (Array(107.02345855, dtype=float64), [Array(120.43340604, dtype=float64)], Array(21.23484239, dtype=float64)), testing loss 1.0324801230077927
+Critical moisture ratio [0.08058553]
+Mass transfer coefficient constant [159.99097789]
+Heat transfer coefficient constant [0.50927534]
+Inlet moisture of R13SSR4 is (Array([0.09986418], dtype=float64), Array([0.00513442], dtype=float64))(mean, sigma), mse cost 1.2724901160366129, total cost 1.2735755061181857
+----------------------------------------------------------------------------------------------------
+ 21%|##1       | 21/100 [08:14<07:28,  5.68s/it]
+epoch 21, training loss 1.2735755061181857, gradients norm (Array(158.56366813, dtype=float64), [Array(163.93604176, dtype=float64)], Array(90.31608096, dtype=float64)), testing loss 1.2735755061181857
+Critical moisture ratio [0.08048385]
+Mass transfer coefficient constant [159.99073014]
+Heat transfer coefficient constant [0.50937234]
+Inlet moisture of R13SSR4 is (Array([0.10015935], dtype=float64), Array([0.00508833], dtype=float64))(mean, sigma), mse cost 1.1628790191556002, total cost 1.1636971632422863
+----------------------------------------------------------------------------------------------------
+ 22%|##2       | 22/100 [08:20<07:23,  5.69s/it]
+epoch 22, training loss 1.1636971632422863, gradients norm (Array(195.16585663, dtype=float64), [Array(188.69832382, dtype=float64)], Array(79.9032777, dtype=float64)), testing loss 1.1636971632422863
+Critical moisture ratio [0.08025243]
+Mass transfer coefficient constant [159.99033173]
+Heat transfer coefficient constant [0.50934282]
+Inlet moisture of R13SSR4 is (Array([0.10055168], dtype=float64), Array([0.00498832], dtype=float64))(mean, sigma), mse cost 0.9205919428846023, total cost 0.9266843594613432
+----------------------------------------------------------------------------------------------------
+ 23%|##3       | 23/100 [08:25<07:05,  5.52s/it]
+epoch 23, training loss 0.9266843594613432, gradients norm (Array(96.88502998, dtype=float64), [Array(118.84969428, dtype=float64)], Array(19.87542407, dtype=float64)), testing loss 0.9266843594613432
+Critical moisture ratio [0.0801144]
+Mass transfer coefficient constant [159.989921]
+Heat transfer coefficient constant [0.5093885]
+Inlet moisture of R13SSR4 is (Array([0.10082126], dtype=float64), Array([0.0048826], dtype=float64))(mean, sigma), mse cost 0.9259677112564046, total cost 0.9400128317299089
+----------------------------------------------------------------------------------------------------
+ 24%|##4       | 24/100 [08:31<07:00,  5.54s/it]
+epoch 24, training loss 0.9400128317299089, gradients norm (Array(119.76413652, dtype=float64), [Array(152.49347035, dtype=float64)], Array(18.02475523, dtype=float64)), testing loss 0.9400128317299089
+Critical moisture ratio [0.08007778]
+Mass transfer coefficient constant [159.98955996]
+Heat transfer coefficient constant [0.50951889]
+Inlet moisture of R13SSR4 is (Array([0.10095597], dtype=float64), Array([0.00477287], dtype=float64))(mean, sigma), mse cost 1.0512029384379027, total cost 1.071576335876573
+----------------------------------------------------------------------------------------------------
+ 25%|##5       | 25/100 [08:36<06:56,  5.55s/it]
+epoch 25, training loss 1.071576335876573, gradients norm (Array(76.09189852, dtype=float64), [Array(114.23940232, dtype=float64)], Array(24.18683543, dtype=float64)), testing loss 1.071576335876573
+Critical moisture ratio [0.08010051]
+Mass transfer coefficient constant [159.98931187]
+Heat transfer coefficient constant [0.50969768]
+Inlet moisture of R13SSR4 is (Array([0.10099785], dtype=float64), Array([0.00465468], dtype=float64))(mean, sigma), mse cost 1.1016891226155296, total cost 1.1264887506155232
+----------------------------------------------------------------------------------------------------
+ 26%|##6       | 26/100 [08:42<06:47,  5.51s/it]
+epoch 26, training loss 1.1264887506155232, gradients norm (Array(99.08761305, dtype=float64), [Array(59.14124592, dtype=float64)], Array(46.93740969, dtype=float64)), testing loss 1.1264887506155232
+Critical moisture ratio [0.08004794]
+Mass transfer coefficient constant [159.98896887]
+Heat transfer coefficient constant [0.50980399]
+Inlet moisture of R13SSR4 is (Array([0.10107744], dtype=float64), Array([0.00451141], dtype=float64))(mean, sigma), mse cost 0.9389974994060474, total cost 0.9720996577568953
+----------------------------------------------------------------------------------------------------
+ 27%|##7       | 27/100 [08:48<06:51,  5.64s/it]
+epoch 27, training loss 0.9720996577568953, gradients norm (Array(122.56499165, dtype=float64), [Array(165.53200504, dtype=float64)], Array(11.85148635, dtype=float64)), testing loss 0.9720996577568953
+Critical moisture ratio [0.08009095]
+Mass transfer coefficient constant [159.98864685]
+Heat transfer coefficient constant [0.50999421]
+Inlet moisture of R13SSR4 is (Array([0.10103323], dtype=float64), Array([0.00439005], dtype=float64))(mean, sigma), mse cost 1.1614176313968751, total cost 1.1983166867094877
+----------------------------------------------------------------------------------------------------
+ 28%|##8       | 28/100 [08:53<06:50,  5.70s/it]
+epoch 28, training loss 1.1983166867094877, gradients norm (Array(157.23733203, dtype=float64), [Array(198.38266603, dtype=float64)], Array(16.8739093, dtype=float64)), testing loss 1.1983166867094877
+Critical moisture ratio [0.08024406]
+Mass transfer coefficient constant [159.98815985]
+Heat transfer coefficient constant [0.51029044]
+Inlet moisture of R13SSR4 is (Array([0.10085855], dtype=float64), Array([0.00426631], dtype=float64))(mean, sigma), mse cost 1.2547088025187139, total cost 1.2921673288385538
+----------------------------------------------------------------------------------------------------
+ 29%|##9       | 29/100 [08:59<06:21,  5.38s/it]
+epoch 29, training loss 1.2921673288385538, gradients norm (Array(130.38808839, dtype=float64), [Array(164.5734625, dtype=float64)], Array(47.96185742, dtype=float64)), testing loss 1.2921673288385538
+Critical moisture ratio [0.08047656]
+Mass transfer coefficient constant [159.98776898]
+Heat transfer coefficient constant [0.51066244]
+Inlet moisture of R13SSR4 is (Array([0.10059086], dtype=float64), Array([0.00411594], dtype=float64))(mean, sigma), mse cost 0.8877622858622723, total cost 0.9281342045792921
+----------------------------------------------------------------------------------------------------
+ 30%|###       | 30/100 [09:05<06:28,  5.55s/it]
+epoch 30, training loss 0.9281342045792921, gradients norm (Array(34.04839938, dtype=float64), [Array(57.63121246, dtype=float64)], Array(61.78372207, dtype=float64)), testing loss 0.9281342045792921
+Critical moisture ratio [0.08071326]
+Mass transfer coefficient constant [159.98739751]
+Heat transfer coefficient constant [0.51102724]
+Inlet moisture of R13SSR4 is (Array([0.10030807], dtype=float64), Array([0.00402866], dtype=float64))(mean, sigma), mse cost 0.8774855587946846, total cost 0.9199894422216759
+----------------------------------------------------------------------------------------------------
+ 31%|###1      | 31/100 [09:09<06:36,  5.74s/it]
+epoch 31, training loss 0.9199894422216759, gradients norm (Array(66.78034528, dtype=float64), [Array(79.03302462, dtype=float64)], Array(76.29226429, dtype=float64)), testing loss 0.9199894422216759
+Critical moisture ratio [0.08097774]
+Mass transfer coefficient constant [159.98701759]
+Heat transfer coefficient constant [0.51140614]
+Inlet moisture of R13SSR4 is (Array([0.09999701], dtype=float64), Array([0.00401077], dtype=float64))(mean, sigma), mse cost 0.8709434689141812, total cost 0.9131241245000341
+----------------------------------------------------------------------------------------------------
+ 32%|###2      | 32/100 [09:14<06:10,  5.44s/it]
+epoch 32, training loss 0.9131241245000341, gradients norm (Array(81.94376429, dtype=float64), [Array(82.02311207, dtype=float64)], Array(110.02031337, dtype=float64)), testing loss 0.9131241245000341
+Critical moisture ratio [0.08115605]
+Mass transfer coefficient constant [159.98650912]
+Heat transfer coefficient constant [0.51169467]
+Inlet moisture of R13SSR4 is (Array([0.09977204], dtype=float64), Array([0.00408293], dtype=float64))(mean, sigma), mse cost 0.893948342066052, total cost 0.9310172311888468
+----------------------------------------------------------------------------------------------------
+ 33%|###3      | 33/100 [09:18<05:40,  5.08s/it]
+epoch 33, training loss 0.9310172311888468, gradients norm (Array(53.98486255, dtype=float64), [Array(63.08411092, dtype=float64)], Array(101.24001375, dtype=float64)), testing loss 0.9310172311888468
+Critical moisture ratio [0.0812773]
+Mass transfer coefficient constant [159.98594688]
+Heat transfer coefficient constant [0.51192058]
+Inlet moisture of R13SSR4 is (Array([0.09961198], dtype=float64), Array([0.00422948], dtype=float64))(mean, sigma), mse cost 0.8502710026522169, total cost 0.8784112901197638
+----------------------------------------------------------------------------------------------------
+ 34%|###4      | 34/100 [09:22<05:17,  4.81s/it]
+epoch 34, training loss 0.8784112901197638, gradients norm (Array(3.87160863, dtype=float64), [Array(19.39503514, dtype=float64)], Array(74.77051034, dtype=float64)), testing loss 0.8784112901197638
+Critical moisture ratio [0.08138479]
+Mass transfer coefficient constant [159.98541079]
+Heat transfer coefficient constant [0.51212346]
+Inlet moisture of R13SSR4 is (Array([0.09948001], dtype=float64), Array([0.00442283], dtype=float64))(mean, sigma), mse cost 0.9244218497091639, total cost 0.9437163360388814
+----------------------------------------------------------------------------------------------------
+ 35%|###5      | 35/100 [09:27<05:03,  4.67s/it]
+epoch 35, training loss 0.9437163360388814, gradients norm (Array(48.88917424, dtype=float64), [Array(69.67689788, dtype=float64)], Array(66.82498714, dtype=float64)), testing loss 0.9437163360388814
+Critical moisture ratio [0.08144474]
+Mass transfer coefficient constant [159.98482339]
+Heat transfer coefficient constant [0.51227581]
+Inlet moisture of R13SSR4 is (Array([0.09941014], dtype=float64), Array([0.00465274], dtype=float64))(mean, sigma), mse cost 1.1545851876896636, total cost 1.1664853411076015
+----------------------------------------------------------------------------------------------------
+ 36%|###6      | 36/100 [09:32<05:06,  4.80s/it]
+epoch 36, training loss 1.1664853411076015, gradients norm (Array(203.55471056, dtype=float64), [Array(227.05880847, dtype=float64)], Array(7.68287906, dtype=float64)), testing loss 1.1664853411076015
+Critical moisture ratio [0.08134365]
+Mass transfer coefficient constant [159.9841321]
+Heat transfer coefficient constant [0.51228774]
+Inlet moisture of R13SSR4 is (Array([0.09950761], dtype=float64), Array([0.00486842], dtype=float64))(mean, sigma), mse cost 0.9546940451152331, total cost 0.9602418196347685
+----------------------------------------------------------------------------------------------------
+ 37%|###7      | 37/100 [09:36<04:56,  4.70s/it]
+epoch 37, training loss 0.9602418196347685, gradients norm (Array(32.84258836, dtype=float64), [Array(13.08998454, dtype=float64)], Array(39.29697673, dtype=float64)), testing loss 0.9602418196347685
+Critical moisture ratio [0.08127678]
+Mass transfer coefficient constant [159.98351982]
+Heat transfer coefficient constant [0.51232848]
+Inlet moisture of R13SSR4 is (Array([0.09958707], dtype=float64), Array([0.00503173], dtype=float64))(mean, sigma), mse cost 0.8495603013029954, total cost 0.853010741375607
+----------------------------------------------------------------------------------------------------
+ 38%|###8      | 38/100 [09:41<04:46,  4.61s/it]
+epoch 38, training loss 0.853010741375607, gradients norm (Array(4.10657868, dtype=float64), [Array(20.63043066, dtype=float64)], Array(1.24756693, dtype=float64)), testing loss 0.853010741375607
+Critical moisture ratio [0.08121274]
+Mass transfer coefficient constant [159.98290586]
+Heat transfer coefficient constant [0.51236418]
+Inlet moisture of R13SSR4 is (Array([0.09967415], dtype=float64), Array([0.00517933], dtype=float64))(mean, sigma), mse cost 1.0618493829566304, total cost 1.06524435687746
+----------------------------------------------------------------------------------------------------
+ 39%|###9      | 39/100 [09:45<04:43,  4.64s/it]
+epoch 39, training loss 1.06524435687746, gradients norm (Array(72.36918412, dtype=float64), [Array(85.38764601, dtype=float64)], Array(25.85639999, dtype=float64)), testing loss 1.06524435687746
+Critical moisture ratio [0.08109832]
+Mass transfer coefficient constant [159.98225795]
+Heat transfer coefficient constant [0.51235416]
+Inlet moisture of R13SSR4 is (Array([0.09981457], dtype=float64), Array([0.00529155], dtype=float64))(mean, sigma), mse cost 0.7805304415385081, total cost 0.7845548740964936
+----------------------------------------------------------------------------------------------------
+ 40%|####      | 40/100 [09:49<04:33,  4.56s/it]
+epoch 40, training loss 0.7845548740964936, gradients norm (Array(30.58445615, dtype=float64), [Array(37.99463215, dtype=float64)], Array(3.89426336, dtype=float64)), testing loss 0.7845548740964936
+Critical moisture ratio [0.08097021]
+Mass transfer coefficient constant [159.98155397]
+Heat transfer coefficient constant [0.51232038]
+Inlet moisture of R13SSR4 is (Array([0.0999699], dtype=float64), Array([0.00539703], dtype=float64))(mean, sigma), mse cost 0.9837613135853834, total cost 0.9899272283727744
+----------------------------------------------------------------------------------------------------
+ 41%|####1     | 41/100 [09:54<04:23,  4.46s/it]
+epoch 41, training loss 0.9899272283727744, gradients norm (Array(155.61119078, dtype=float64), [Array(156.73648545, dtype=float64)], Array(24.58037674, dtype=float64)), testing loss 0.9899272283727744
+Critical moisture ratio [0.0807341]
+Mass transfer coefficient constant [159.98070854]
+Heat transfer coefficient constant [0.51218337]
+Inlet moisture of R13SSR4 is (Array([0.10022263], dtype=float64), Array([0.00547154], dtype=float64))(mean, sigma), mse cost 1.5757561097114425, total cost 1.5853802208971832
+----------------------------------------------------------------------------------------------------
+ 42%|####2     | 42/100 [09:59<04:23,  4.54s/it]
+epoch 42, training loss 1.5853802208971832, gradients norm (Array(162.49783163, dtype=float64), [Array(153.56448554, dtype=float64)], Array(185.07186974, dtype=float64)), testing loss 1.5853802208971832
+Critical moisture ratio [0.08039727]
+Mass transfer coefficient constant [159.98006302]
+Heat transfer coefficient constant [0.51198543]
+Inlet moisture of R13SSR4 is (Array([0.10056012], dtype=float64), Array([0.00537915], dtype=float64))(mean, sigma), mse cost 1.0759525351384733, total cost 1.0878397278379097
+----------------------------------------------------------------------------------------------------
+ 43%|####3     | 43/100 [10:03<04:17,  4.52s/it]
+epoch 43, training loss 1.0878397278379097, gradients norm (Array(10.73304988, dtype=float64), [Array(11.65477875, dtype=float64)], Array(63.34070184, dtype=float64)), testing loss 1.0878397278379097
+Critical moisture ratio [0.0800825]
+Mass transfer coefficient constant [159.97943291]
+Heat transfer coefficient constant [0.51180746]
+Inlet moisture of R13SSR4 is (Array([0.10085859], dtype=float64), Array([0.00524085], dtype=float64))(mean, sigma), mse cost 0.9529402691421036, total cost 0.9699680964718184
+----------------------------------------------------------------------------------------------------
+ 44%|####4     | 44/100 [10:08<04:11,  4.49s/it]
+epoch 44, training loss 0.9699680964718184, gradients norm (Array(117.67953196, dtype=float64), [Array(151.89712826, dtype=float64)], Array(32.30329818, dtype=float64)), testing loss 0.9699680964718184
+Critical moisture ratio [0.0798912]
+Mass transfer coefficient constant [159.97880873]
+Heat transfer coefficient constant [0.51174409]
+Inlet moisture of R13SSR4 is (Array([0.10101586], dtype=float64), Array([0.0050871], dtype=float64))(mean, sigma), mse cost 1.02827153211716, total cost 1.0492125304678939
+----------------------------------------------------------------------------------------------------
+ 45%|####5     | 45/100 [10:12<04:08,  4.51s/it]
+epoch 45, training loss 1.0492125304678939, gradients norm (Array(179.21248154, dtype=float64), [Array(219.64844323, dtype=float64)], Array(97.14940898, dtype=float64)), testing loss 1.0492125304678939
+Critical moisture ratio [0.07985987]
+Mass transfer coefficient constant [159.97839918]
+Heat transfer coefficient constant [0.51184281]
+Inlet moisture of R13SSR4 is (Array([0.10099797], dtype=float64), Array([0.00486373], dtype=float64))(mean, sigma), mse cost 0.9402219737255759, total cost 0.960890653982647
+----------------------------------------------------------------------------------------------------
+ 46%|####6     | 46/100 [10:16<04:03,  4.50s/it]
+epoch 46, training loss 0.960890653982647, gradients norm (Array(95.39012117, dtype=float64), [Array(135.20144804, dtype=float64)], Array(5.58467564, dtype=float64)), testing loss 0.960890653982647
+Critical moisture ratio [0.07990582]
+Mass transfer coefficient constant [159.97799111]
+Heat transfer coefficient constant [0.51200923]
+Inlet moisture of R13SSR4 is (Array([0.10088524], dtype=float64), Array([0.00466556], dtype=float64))(mean, sigma), mse cost 0.9049122160630991, total cost 0.9251642853113871
+----------------------------------------------------------------------------------------------------
+ 47%|####6     | 47/100 [10:21<03:55,  4.44s/it]
+epoch 47, training loss 0.9251642853113871, gradients norm (Array(64.9340592, dtype=float64), [Array(29.50641799, dtype=float64)], Array(13.33027432, dtype=float64)), testing loss 0.9251642853113871
+Critical moisture ratio [0.07989654]
+Mass transfer coefficient constant [159.97746185]
+Heat transfer coefficient constant [0.51211511]
+Inlet moisture of R13SSR4 is (Array([0.10080409], dtype=float64), Array([0.00449727], dtype=float64))(mean, sigma), mse cost 1.1289903460225945, total cost 1.1523976504419875
+----------------------------------------------------------------------------------------------------
+ 48%|####8     | 48/100 [10:25<03:47,  4.37s/it]
+epoch 48, training loss 1.1523976504419875, gradients norm (Array(146.75163581, dtype=float64), [Array(178.75609476, dtype=float64)], Array(45.283268, dtype=float64)), testing loss 1.1523976504419875
+Critical moisture ratio [0.08000287]
+Mass transfer coefficient constant [159.97706857]
+Heat transfer coefficient constant [0.51233512]
+Inlet moisture of R13SSR4 is (Array([0.10060353], dtype=float64), Array([0.00430397], dtype=float64))(mean, sigma), mse cost 1.609877814115785, total cost 1.6375457771724546
+----------------------------------------------------------------------------------------------------
+ 49%|####9     | 49/100 [10:29<03:39,  4.30s/it]
+epoch 49, training loss 1.6375457771724546, gradients norm (Array(251.85409568, dtype=float64), [Array(227.62946648, dtype=float64)], Array(223.0523954, dtype=float64)), testing loss 1.6375457771724546
+Critical moisture ratio [0.07990457]
+Mass transfer coefficient constant [159.97667]
+Heat transfer coefficient constant [0.51239507]
+Inlet moisture of R13SSR4 is (Array([0.1005864], dtype=float64), Array([0.00394109], dtype=float64))(mean, sigma), mse cost 0.9176533931447605, total cost 0.9731554737657346
+----------------------------------------------------------------------------------------------------
+ 50%|#####     | 50/100 [10:34<03:39,  4.38s/it]
+epoch 50, training loss 0.9731554737657346, gradients norm (Array(49.20466361, dtype=float64), [Array(72.59648875, dtype=float64)], Array(99.37017442, dtype=float64)), testing loss 0.9731554737657346
+Critical moisture ratio [0.07985304]
+Mass transfer coefficient constant [159.97627915]
+Heat transfer coefficient constant [0.51248803]
+Inlet moisture of R13SSR4 is (Array([0.10051938], dtype=float64), Array([0.00370043], dtype=float64))(mean, sigma), mse cost 0.9478477247024683, total cost 1.0280953226012155
+----------------------------------------------------------------------------------------------------
+ 51%|#####1    | 51/100 [10:38<03:31,  4.32s/it]
+epoch 51, training loss 1.0280953226012155, gradients norm (Array(96.00368476, dtype=float64), [Array(116.67681703, dtype=float64)], Array(104.26705533, dtype=float64)), testing loss 1.0280953226012155
+Critical moisture ratio [0.07988025]
+Mass transfer coefficient constant [159.97591391]
+Heat transfer coefficient constant [0.51264852]
+Inlet moisture of R13SSR4 is (Array([0.10037591], dtype=float64), Array([0.00357458], dtype=float64))(mean, sigma), mse cost 0.928663613966571, total cost 1.022633103667455
+----------------------------------------------------------------------------------------------------
+ 52%|#####2    | 52/100 [10:42<03:25,  4.28s/it]
+epoch 52, training loss 1.022633103667455, gradients norm (Array(29.23103926, dtype=float64), [Array(14.20280133, dtype=float64)], Array(121.33141654, dtype=float64)), testing loss 1.022633103667455
+Critical moisture ratio [0.07988229]
+Mass transfer coefficient constant [159.97548838]
+Heat transfer coefficient constant [0.51277632]
+Inlet moisture of R13SSR4 is (Array([0.10025579], dtype=float64), Array([0.00356724], dtype=float64))(mean, sigma), mse cost 0.8687224419542494, total cost 0.9621810959127184
+----------------------------------------------------------------------------------------------------
+ 53%|#####3    | 53/100 [10:46<03:19,  4.24s/it]
+epoch 53, training loss 0.9621810959127184, gradients norm (Array(116.26369228, dtype=float64), [Array(126.36894598, dtype=float64)], Array(99.66661418, dtype=float64)), testing loss 0.9621810959127184
+Critical moisture ratio [0.07997441]
+Mass transfer coefficient constant [159.97512075]
+Heat transfer coefficient constant [0.51298632]
+Inlet moisture of R13SSR4 is (Array([0.10005669], dtype=float64), Array([0.00364767], dtype=float64))(mean, sigma), mse cost 0.8121529742334812, total cost 0.8936763816223079
+----------------------------------------------------------------------------------------------------
+ 54%|#####4    | 54/100 [10:50<03:14,  4.22s/it]
+epoch 54, training loss 0.8936763816223079, gradients norm (Array(34.73108525, dtype=float64), [Array(36.94746692, dtype=float64)], Array(141.09811686, dtype=float64)), testing loss 0.8936763816223079
+Critical moisture ratio [0.08008522]
+Mass transfer coefficient constant [159.97475948]
+Heat transfer coefficient constant [0.51320258]
+Inlet moisture of R13SSR4 is (Array([0.09984921], dtype=float64), Array([0.00384231], dtype=float64))(mean, sigma), mse cost 0.7522883996066148, total cost 0.8113741777321087
+----------------------------------------------------------------------------------------------------
+ 55%|#####5    | 55/100 [10:55<03:10,  4.23s/it]
+epoch 55, training loss 0.8113741777321087, gradients norm (Array(33.81097511, dtype=float64), [Array(27.72381143, dtype=float64)], Array(109.8966917, dtype=float64)), testing loss 0.8113741777321087
+Critical moisture ratio [0.08021248]
+Mass transfer coefficient constant [159.97437128]
+Heat transfer coefficient constant [0.51342527]
+Inlet moisture of R13SSR4 is (Array([0.0996406], dtype=float64), Array([0.00411314], dtype=float64))(mean, sigma), mse cost 0.918049369687837, total cost 0.9542426062365686
+----------------------------------------------------------------------------------------------------
+ 56%|#####6    | 56/100 [10:59<03:12,  4.38s/it]
+epoch 56, training loss 0.9542426062365686, gradients norm (Array(46.34938835, dtype=float64), [Array(31.90588294, dtype=float64)], Array(41.62888383, dtype=float64)), testing loss 0.9542426062365686
+Critical moisture ratio [0.08036476]
+Mass transfer coefficient constant [159.97403027]
+Heat transfer coefficient constant [0.5136674]
+Inlet moisture of R13SSR4 is (Array([0.09942775], dtype=float64), Array([0.00439522], dtype=float64))(mean, sigma), mse cost 1.3608857081898087, total cost 1.3827145127643197
+----------------------------------------------------------------------------------------------------
+ 57%|#####6    | 57/100 [11:04<03:05,  4.32s/it]
+epoch 57, training loss 1.3827145127643197, gradients norm (Array(213.88955038, dtype=float64), [Array(190.6518677, dtype=float64)], Array(406.97029758, dtype=float64)), testing loss 1.3827145127643197
+Critical moisture ratio [0.08066683]
+Mass transfer coefficient constant [159.97383663]
+Heat transfer coefficient constant [0.51410365]
+Inlet moisture of R13SSR4 is (Array([0.09909852], dtype=float64), Array([0.00430176], dtype=float64))(mean, sigma), mse cost 1.3001677446810829, total cost 1.3369374524286626
+----------------------------------------------------------------------------------------------------
+ 58%|#####8    | 58/100 [11:10<03:04,  4.40s/it]
+epoch 58, training loss 1.3369374524286626, gradients norm (Array(286.03725282, dtype=float64), [Array(321.9740395, dtype=float64)], Array(16.52893337, dtype=float64)), testing loss 1.3369374524286626
+Critical moisture ratio [0.08071318]
+Mass transfer coefficient constant [159.97337086]
+Heat transfer coefficient constant [0.51431511]
+Inlet moisture of R13SSR4 is (Array([0.09903981], dtype=float64), Array([0.00420364], dtype=float64))(mean, sigma), mse cost 0.8458362438538343, total cost 0.891174447471141
+----------------------------------------------------------------------------------------------------
+ 59%|#####8    | 59/100 [11:14<03:18,  4.84s/it]
+epoch 59, training loss 0.891174447471141, gradients norm (Array(21.99942776, dtype=float64), [Array(60.42112362, dtype=float64)], Array(81.57892728, dtype=float64)), testing loss 0.891174447471141
+Critical moisture ratio [0.08073846]
+Mass transfer coefficient constant [159.97286341]
+Heat transfer coefficient constant [0.51449297]
+Inlet moisture of R13SSR4 is (Array([0.0990294], dtype=float64), Array([0.00418083], dtype=float64))(mean, sigma), mse cost 1.100231143493389, total cost 1.1475875096732586
+----------------------------------------------------------------------------------------------------
+ 60%|######    | 60/100 [11:19<03:13,  4.83s/it]
+epoch 60, training loss 1.1475875096732586, gradients norm (Array(198.48820754, dtype=float64), [Array(237.22822349, dtype=float64)], Array(69.70349975, dtype=float64)), testing loss 1.1475875096732586
+Critical moisture ratio [0.08061117]
+Mass transfer coefficient constant [159.97217737]
+Heat transfer coefficient constant [0.51452653]
+Inlet moisture of R13SSR4 is (Array([0.09918567], dtype=float64), Array([0.00421682], dtype=float64))(mean, sigma), mse cost 1.6334801442733526, total cost 1.6727310364479044
+----------------------------------------------------------------------------------------------------
+ 61%|######1   | 61/100 [11:24<03:07,  4.80s/it]
+epoch 61, training loss 1.6727310364479044, gradients norm (Array(263.47651778, dtype=float64), [Array(295.98051108, dtype=float64)], Array(138.81732269, dtype=float64)), testing loss 1.6727310364479044
+Critical moisture ratio [0.08030519]
+Mass transfer coefficient constant [159.97148611]
+Heat transfer coefficient constant [0.51442382]
+Inlet moisture of R13SSR4 is (Array([0.09952373], dtype=float64), Array([0.00413661], dtype=float64))(mean, sigma), mse cost 1.3531540154815525, total cost 1.3894830359074042
+----------------------------------------------------------------------------------------------------
+ 62%|######2   | 62/100 [11:28<02:59,  4.73s/it]
+epoch 62, training loss 1.3894830359074042, gradients norm (Array(197.56519493, dtype=float64), [Array(216.55953462, dtype=float64)], Array(69.58233608, dtype=float64)), testing loss 1.3894830359074042
+Critical moisture ratio [0.07988807]
+Mass transfer coefficient constant [159.97074153]
+Heat transfer coefficient constant [0.51422559]
+Inlet moisture of R13SSR4 is (Array([0.09997083], dtype=float64), Array([0.00400731], dtype=float64))(mean, sigma), mse cost 1.1742600624893886, total cost 1.216765557399245
+----------------------------------------------------------------------------------------------------
+ 63%|######3   | 63/100 [11:33<02:53,  4.70s/it]
+epoch 63, training loss 1.216765557399245, gradients norm (Array(140.28370293, dtype=float64), [Array(141.41332272, dtype=float64)], Array(13.3505664, dtype=float64)), testing loss 1.216765557399245
+Critical moisture ratio [0.07941049]
+Mass transfer coefficient constant [159.96992848]
+Heat transfer coefficient constant [0.51396622]
+Inlet moisture of R13SSR4 is (Array([0.10046871], dtype=float64), Array([0.00387905], dtype=float64))(mean, sigma), mse cost 1.2628934153527498, total cost 1.3220754415382598
+----------------------------------------------------------------------------------------------------
+ 64%|######4   | 64/100 [11:37<02:45,  4.60s/it]
+epoch 64, training loss 1.3220754415382598, gradients norm (Array(220.67443041, dtype=float64), [Array(239.1812352, dtype=float64)], Array(56.77293228, dtype=float64)), testing loss 1.3220754415382598
+Critical moisture ratio [0.07914496]
+Mass transfer coefficient constant [159.96921879]
+Heat transfer coefficient constant [0.51392188]
+Inlet moisture of R13SSR4 is (Array([0.10075216], dtype=float64), Array([0.00371598], dtype=float64))(mean, sigma), mse cost 0.7607365933431585, total cost 0.8450169126033366
+----------------------------------------------------------------------------------------------------
+ 65%|######5   | 65/100 [11:41<02:36,  4.48s/it]
+epoch 65, training loss 0.8450169126033366, gradients norm (Array(65.30170757, dtype=float64), [Array(95.30769304, dtype=float64)], Array(159.1869205, dtype=float64)), testing loss 0.8450169126033366
+Critical moisture ratio [0.07895186]
+Mass transfer coefficient constant [159.96852513]
+Heat transfer coefficient constant [0.5139285]
+Inlet moisture of R13SSR4 is (Array([0.10094476], dtype=float64), Array([0.00370088], dtype=float64))(mean, sigma), mse cost 0.8568368860195851, total cost 0.9494856515606468
+----------------------------------------------------------------------------------------------------
+ 66%|######6   | 66/100 [11:46<02:32,  4.49s/it]
+epoch 66, training loss 0.9494856515606468, gradients norm (Array(6.23209779, dtype=float64), [Array(43.97646271, dtype=float64)], Array(108.94074207, dtype=float64)), testing loss 0.9494856515606468
+Critical moisture ratio [0.07878128]
+Mass transfer coefficient constant [159.96782444]
+Heat transfer coefficient constant [0.51394232]
+Inlet moisture of R13SSR4 is (Array([0.10108974], dtype=float64), Array([0.00377693], dtype=float64))(mean, sigma), mse cost 0.8616275807553928, total cost 0.9512084813105262
+----------------------------------------------------------------------------------------------------
+ 67%|######7   | 67/100 [11:50<02:26,  4.45s/it]
+epoch 67, training loss 0.9512084813105262, gradients norm (Array(69.49097275, dtype=float64), [Array(112.99417534, dtype=float64)], Array(138.00501584, dtype=float64)), testing loss 0.9512084813105262
+Critical moisture ratio [0.07867793]
+Mass transfer coefficient constant [159.96720862]
+Heat transfer coefficient constant [0.51400805]
+Inlet moisture of R13SSR4 is (Array([0.10114438], dtype=float64), Array([0.00395854], dtype=float64))(mean, sigma), mse cost 1.1800995430874481, total cost 1.2532548095809501
+----------------------------------------------------------------------------------------------------
+ 68%|######8   | 68/100 [11:55<02:21,  4.41s/it]
+epoch 68, training loss 1.2532548095809501, gradients norm (Array(210.61864037, dtype=float64), [Array(256.14495973, dtype=float64)], Array(3.07997098, dtype=float64)), testing loss 1.2532548095809501
+Critical moisture ratio [0.07873892]
+Mass transfer coefficient constant [159.9667232]
+Heat transfer coefficient constant [0.51424735]
+Inlet moisture of R13SSR4 is (Array([0.1010225], dtype=float64), Array([0.00412067], dtype=float64))(mean, sigma), mse cost 1.6512072647237437, total cost 1.7051379762958154
+----------------------------------------------------------------------------------------------------
+ 69%|######9   | 69/100 [11:59<02:16,  4.42s/it]
+epoch 69, training loss 1.7051379762958154, gradients norm (Array(233.8489955, dtype=float64), [Array(192.90121217, dtype=float64)], Array(377.29091112, dtype=float64)), testing loss 1.7051379762958154
+Critical moisture ratio [0.07862534]
+Mass transfer coefficient constant [159.96618451]
+Heat transfer coefficient constant [0.514356]
+Inlet moisture of R13SSR4 is (Array([0.10104099], dtype=float64), Array([0.00396425], dtype=float64))(mean, sigma), mse cost 0.9421134019862598, total cost 1.0102133249352097
+----------------------------------------------------------------------------------------------------
+ 70%|#######   | 70/100 [12:03<02:12,  4.42s/it]
+epoch 70, training loss 1.0102133249352097, gradients norm (Array(119.44497613, dtype=float64), [Array(160.94015495, dtype=float64)], Array(70.92681518, dtype=float64)), testing loss 1.0102133249352097
+Critical moisture ratio [0.0786087]
+Mass transfer coefficient constant [159.96575696]
+Heat transfer coefficient constant [0.51455122]
+Inlet moisture of R13SSR4 is (Array([0.10095122], dtype=float64), Array([0.00387826], dtype=float64))(mean, sigma), mse cost 1.1754716667251264, total cost 1.2484370311091482
+----------------------------------------------------------------------------------------------------
+ 71%|#######1  | 71/100 [12:08<02:07,  4.39s/it]
+epoch 71, training loss 1.2484370311091482, gradients norm (Array(185.5984838, dtype=float64), [Array(223.43392388, dtype=float64)], Array(57.35481205, dtype=float64)), testing loss 1.2484370311091482
+Critical moisture ratio [0.07872633]
+Mass transfer coefficient constant [159.96537695]
+Heat transfer coefficient constant [0.51487865]
+Inlet moisture of R13SSR4 is (Array([0.10072463], dtype=float64), Array([0.00384556], dtype=float64))(mean, sigma), mse cost 1.0694505703914263, total cost 1.1382373335500044
+----------------------------------------------------------------------------------------------------
+ 72%|#######2  | 72/100 [12:12<02:01,  4.34s/it]
+epoch 72, training loss 1.1382373335500044, gradients norm (Array(17.77427896, dtype=float64), [Array(11.19076271, dtype=float64)], Array(32.59712099, dtype=float64)), testing loss 1.1382373335500044
+Critical moisture ratio [0.07882015]
+Mass transfer coefficient constant [159.96499433]
+Heat transfer coefficient constant [0.51517426]
+Inlet moisture of R13SSR4 is (Array([0.10051187], dtype=float64), Array([0.00384176], dtype=float64))(mean, sigma), mse cost 1.0679234562733466, total cost 1.1318532913582984
+----------------------------------------------------------------------------------------------------
+ 73%|#######3  | 73/100 [12:17<01:57,  4.34s/it]
+epoch 73, training loss 1.1318532913582984, gradients norm (Array(181.06658746, dtype=float64), [Array(201.34967158, dtype=float64)], Array(61.02646214, dtype=float64)), testing loss 1.1318532913582984
+Critical moisture ratio [0.07903375]
+Mass transfer coefficient constant [159.96473555]
+Heat transfer coefficient constant [0.51558132]
+Inlet moisture of R13SSR4 is (Array([0.1001892], dtype=float64), Array([0.00388692], dtype=float64))(mean, sigma), mse cost 0.9122619417478228, total cost 0.9669612635095689
+----------------------------------------------------------------------------------------------------
+ 74%|#######4  | 74/100 [12:21<01:55,  4.44s/it]
+epoch 74, training loss 0.9669612635095689, gradients norm (Array(11.23613149, dtype=float64), [Array(3.69402653, dtype=float64)], Array(89.04796075, dtype=float64)), testing loss 0.9669612635095689
+Critical moisture ratio [0.07921922]
+Mass transfer coefficient constant [159.96440913]
+Heat transfer coefficient constant [0.51594577]
+Inlet moisture of R13SSR4 is (Array([0.09989922], dtype=float64), Array([0.00399887], dtype=float64))(mean, sigma), mse cost 1.108062387790183, total cost 1.1515107374607365
+----------------------------------------------------------------------------------------------------
+ 75%|#######5  | 75/100 [12:25<01:49,  4.38s/it]
+epoch 75, training loss 1.1515107374607365, gradients norm (Array(194.91418184, dtype=float64), [Array(198.87591826, dtype=float64)], Array(63.88059283, dtype=float64)), testing loss 1.1515107374607365
+Critical moisture ratio [0.07924546]
+Mass transfer coefficient constant [159.9638831]
+Heat transfer coefficient constant [0.51615756]
+Inlet moisture of R13SSR4 is (Array([0.09977038], dtype=float64), Array([0.00404882], dtype=float64))(mean, sigma), mse cost 1.2065308554941456, total cost 1.2464562395331107
+----------------------------------------------------------------------------------------------------
+ 76%|#######6  | 76/100 [12:30<01:44,  4.36s/it]
+epoch 76, training loss 1.2464562395331107, gradients norm (Array(59.47577513, dtype=float64), [Array(68.67293082, dtype=float64)], Array(49.2922833, dtype=float64)), testing loss 1.2464562395331107
+Critical moisture ratio [0.07922638]
+Mass transfer coefficient constant [159.96342514]
+Heat transfer coefficient constant [0.51632784]
+Inlet moisture of R13SSR4 is (Array([0.09969923], dtype=float64), Array([0.00405422], dtype=float64))(mean, sigma), mse cost 1.1841075229646902, total cost 1.2243301391497043
+----------------------------------------------------------------------------------------------------
+ 77%|#######7  | 77/100 [12:34<01:44,  4.53s/it]
+epoch 77, training loss 1.2243301391497043, gradients norm (Array(123.97545761, dtype=float64), [Array(135.98147315, dtype=float64)], Array(35.91637692, dtype=float64)), testing loss 1.2243301391497043
+Critical moisture ratio [0.07911979]
+Mass transfer coefficient constant [159.96291145]
+Heat transfer coefficient constant [0.51641461]
+Inlet moisture of R13SSR4 is (Array([0.09972517], dtype=float64), Array([0.00402992], dtype=float64))(mean, sigma), mse cost 0.8964803803370773, total cost 0.9384873762121948
+----------------------------------------------------------------------------------------------------
+ 78%|#######8  | 78/100 [12:39<01:38,  4.49s/it]
+epoch 78, training loss 0.9384873762121948, gradients norm (Array(6.32660362, dtype=float64), [Array(4.71183962, dtype=float64)], Array(79.36339563, dtype=float64)), testing loss 0.9384873762121948
+Critical moisture ratio [0.0790278]
+Mass transfer coefficient constant [159.96240554]
+Heat transfer coefficient constant [0.51650012]
+Inlet moisture of R13SSR4 is (Array([0.09975181], dtype=float64), Array([0.00407271], dtype=float64))(mean, sigma), mse cost 1.0299618244536135, total cost 1.068062114596977
+----------------------------------------------------------------------------------------------------
+ 79%|#######9  | 79/100 [12:43<01:33,  4.45s/it]
+epoch 79, training loss 1.068062114596977, gradients norm (Array(176.90499732, dtype=float64), [Array(166.77915877, dtype=float64)], Array(11.2395532, dtype=float64)), testing loss 1.068062114596977
+Critical moisture ratio [0.07907316]
+Mass transfer coefficient constant [159.96195618]
+Heat transfer coefficient constant [0.51672046]
+Inlet moisture of R13SSR4 is (Array([0.09966473], dtype=float64), Array([0.00410225], dtype=float64))(mean, sigma), mse cost 1.0501586650870331, total cost 1.086878349951819
+----------------------------------------------------------------------------------------------------
+ 80%|########  | 80/100 [12:48<01:28,  4.45s/it]
+epoch 80, training loss 1.086878349951819, gradients norm (Array(199.14586185, dtype=float64), [Array(185.52194835, dtype=float64)], Array(53.97969533, dtype=float64)), testing loss 1.086878349951819
+Critical moisture ratio [0.07925659]
+Mass transfer coefficient constant [159.96171211]
+Heat transfer coefficient constant [0.51707651]
+Inlet moisture of R13SSR4 is (Array([0.09946356], dtype=float64), Array([0.00408441], dtype=float64))(mean, sigma), mse cost 1.511635846688291, total cost 1.5532997947151217
+----------------------------------------------------------------------------------------------------
+ 81%|########1 | 81/100 [12:52<01:24,  4.47s/it]
+epoch 81, training loss 1.5532997947151217, gradients norm (Array(225.57396558, dtype=float64), [Array(246.97721321, dtype=float64)], Array(171.56987602, dtype=float64)), testing loss 1.5532997947151217
+Critical moisture ratio [0.0792597]
+Mass transfer coefficient constant [159.96143548]
+Heat transfer coefficient constant [0.51728446]
+Inlet moisture of R13SSR4 is (Array([0.09944653], dtype=float64), Array([0.00392775], dtype=float64))(mean, sigma), mse cost 1.020798379051714, total cost 1.0768407050144946
+----------------------------------------------------------------------------------------------------
+ 82%|########2 | 82/100 [12:57<01:19,  4.43s/it]
+epoch 82, training loss 1.0768407050144946, gradients norm (Array(94.03054973, dtype=float64), [Array(71.77717515, dtype=float64)], Array(45.76608715, dtype=float64)), testing loss 1.0768407050144946
+Critical moisture ratio [0.07932953]
+Mass transfer coefficient constant [159.9612157]
+Heat transfer coefficient constant [0.51754652]
+Inlet moisture of R13SSR4 is (Array([0.09938377], dtype=float64), Array([0.00382373], dtype=float64))(mean, sigma), mse cost 1.7682786138070141, total cost 1.8365033301728315
+----------------------------------------------------------------------------------------------------
+ 83%|########2 | 83/100 [13:01<01:16,  4.48s/it]
+epoch 83, training loss 1.8365033301728315, gradients norm (Array(298.07247528, dtype=float64), [Array(322.64511199, dtype=float64)], Array(288.09695276, dtype=float64)), testing loss 1.8365033301728315
+Critical moisture ratio [0.079183]
+Mass transfer coefficient constant [159.96092017]
+Heat transfer coefficient constant [0.51763911]
+Inlet moisture of R13SSR4 is (Array([0.0995368], dtype=float64), Array([0.00350169], dtype=float64))(mean, sigma), mse cost 0.7963391423770418, total cost 0.902058424609247
+----------------------------------------------------------------------------------------------------
+ 84%|########4 | 84/100 [13:05<01:10,  4.43s/it]
+epoch 84, training loss 0.902058424609247, gradients norm (Array(62.78930183, dtype=float64), [Array(44.18408981, dtype=float64)], Array(161.08523243, dtype=float64)), testing loss 0.902058424609247
+Critical moisture ratio [0.07909448]
+Mass transfer coefficient constant [159.96066411]
+Heat transfer coefficient constant [0.51776627]
+Inlet moisture of R13SSR4 is (Array([0.09964662], dtype=float64), Array([0.00334168], dtype=float64))(mean, sigma), mse cost 0.8731971875985076, total cost 1.0019953761768547
+----------------------------------------------------------------------------------------------------
+ 85%|########5 | 85/100 [13:10<01:06,  4.41s/it]
+epoch 85, training loss 1.0019953761768547, gradients norm (Array(0.51502057, dtype=float64), [Array(13.72508748, dtype=float64)], Array(165.87105271, dtype=float64)), testing loss 1.0019953761768547
+Critical moisture ratio [0.07901465]
+Mass transfer coefficient constant [159.96036908]
+Heat transfer coefficient constant [0.51788323]
+Inlet moisture of R13SSR4 is (Array([0.09975502], dtype=float64), Array([0.00333017], dtype=float64))(mean, sigma), mse cost 1.0766696663193907, total cost 1.206084338087612
+----------------------------------------------------------------------------------------------------
+ 86%|########6 | 86/100 [13:15<01:02,  4.45s/it]
+epoch 86, training loss 1.206084338087612, gradients norm (Array(84.66345179, dtype=float64), [Array(74.74945138, dtype=float64)], Array(114.66065464, dtype=float64)), testing loss 1.206084338087612
+Critical moisture ratio [0.07900247]
+Mass transfer coefficient constant [159.96004329]
+Heat transfer coefficient constant [0.51805969]
+Inlet moisture of R13SSR4 is (Array([0.09980398], dtype=float64), Array([0.00341104], dtype=float64))(mean, sigma), mse cost 1.064760017772428, total cost 1.180652303569814
+----------------------------------------------------------------------------------------------------
+ 87%|########7 | 87/100 [13:19<00:58,  4.49s/it]
+epoch 87, training loss 1.180652303569814, gradients norm (Array(58.48726381, dtype=float64), [Array(50.54929885, dtype=float64)], Array(99.80512214, dtype=float64)), testing loss 1.180652303569814
+Critical moisture ratio [0.07903305]
+Mass transfer coefficient constant [159.95974964]
+Heat transfer coefficient constant [0.51827185]
+Inlet moisture of R13SSR4 is (Array([0.09981493], dtype=float64), Array([0.00356358], dtype=float64))(mean, sigma), mse cost 1.1844496155362632, total cost 1.2777895333821627
+----------------------------------------------------------------------------------------------------
+ 88%|########8 | 88/100 [13:24<00:54,  4.53s/it]
+epoch 88, training loss 1.2777895333821627, gradients norm (Array(32.02020568, dtype=float64), [Array(39.44414646, dtype=float64)], Array(34.33930262, dtype=float64)), testing loss 1.2777895333821627
+Critical moisture ratio [0.07903781]
+Mass transfer coefficient constant [159.9594555]
+Heat transfer coefficient constant [0.51845794]
+Inlet moisture of R13SSR4 is (Array([0.099851], dtype=float64), Array([0.00372914], dtype=float64))(mean, sigma), mse cost 0.8686359674744436, total cost 0.9404703199828276
+----------------------------------------------------------------------------------------------------
+ 89%|########9 | 89/100 [13:28<00:50,  4.56s/it]
+epoch 89, training loss 0.9404703199828276, gradients norm (Array(10.82895421, dtype=float64), [Array(16.81570265, dtype=float64)], Array(112.01875021, dtype=float64)), testing loss 0.9404703199828276
+Critical moisture ratio [0.07903431]
+Mass transfer coefficient constant [159.95912153]
+Heat transfer coefficient constant [0.51862114]
+Inlet moisture of R13SSR4 is (Array([0.09989487], dtype=float64), Array([0.00396823], dtype=float64))(mean, sigma), mse cost 1.5139921735253559, total cost 1.5602684155246722
+----------------------------------------------------------------------------------------------------
+ 90%|######### | 90/100 [13:33<00:45,  4.53s/it]
+epoch 90, training loss 1.5602684155246722, gradients norm (Array(5.1208667, dtype=float64), [Array(8.92229472, dtype=float64)], Array(133.63351584, dtype=float64)), testing loss 1.5602684155246722
+Critical moisture ratio [0.07902775]
+Mass transfer coefficient constant [159.95895307]
+Heat transfer coefficient constant [0.51880513]
+Inlet moisture of R13SSR4 is (Array([0.09994057], dtype=float64), Array([0.00407604], dtype=float64))(mean, sigma), mse cost 1.5016343380252686, total cost 1.5382986962531178
+----------------------------------------------------------------------------------------------------
+ 91%|#########1| 91/100 [13:38<00:41,  4.57s/it]
+epoch 91, training loss 1.5382986962531178, gradients norm (Array(47.96983439, dtype=float64), [Array(50.36401732, dtype=float64)], Array(187.70958062, dtype=float64)), testing loss 1.5382986962531178
+Critical moisture ratio [0.07898689]
+Mass transfer coefficient constant [159.95893789]
+Heat transfer coefficient constant [0.51898176]
+Inlet moisture of R13SSR4 is (Array([0.10001588], dtype=float64), Array([0.00402292], dtype=float64))(mean, sigma), mse cost 1.0376130799424428, total cost 1.0787257592527215
+----------------------------------------------------------------------------------------------------
+ 92%|#########2| 92/100 [13:42<00:36,  4.58s/it]
+epoch 92, training loss 1.0787257592527215, gradients norm (Array(19.00452312, dtype=float64), [Array(19.56251591, dtype=float64)], Array(15.56186834, dtype=float64)), testing loss 1.0787257592527215
+Critical moisture ratio [0.07896379]
+Mass transfer coefficient constant [159.95894199]
+Heat transfer coefficient constant [0.51916756]
+Inlet moisture of R13SSR4 is (Array([0.10007076], dtype=float64), Array([0.0039873], dtype=float64))(mean, sigma), mse cost 0.9125068789264632, total cost 0.9569016617781905
+----------------------------------------------------------------------------------------------------
+ 93%|#########3| 93/100 [13:46<00:32,  4.59s/it]
+epoch 93, training loss 0.9569016617781905, gradients norm (Array(33.3888078, dtype=float64), [Array(30.56929243, dtype=float64)], Array(64.34647743, dtype=float64)), testing loss 0.9569016617781905
+Critical moisture ratio [0.07891832]
+Mass transfer coefficient constant [159.95887572]
+Heat transfer coefficient constant [0.51931524]
+Inlet moisture of R13SSR4 is (Array([0.10014126], dtype=float64), Array([0.00400685], dtype=float64))(mean, sigma), mse cost 1.203129285377849, total cost 1.2460578628198253
+----------------------------------------------------------------------------------------------------
+ 94%|#########3| 94/100 [13:51<00:26,  4.48s/it]
+epoch 94, training loss 1.2460578628198253, gradients norm (Array(145.06710071, dtype=float64), [Array(139.37975225, dtype=float64)], Array(73.87625533, dtype=float64)), testing loss 1.2460578628198253
+Critical moisture ratio [0.07877078]
+Mass transfer coefficient constant [159.95872102]
+Heat transfer coefficient constant [0.51936514]
+Inlet moisture of R13SSR4 is (Array([0.10029983], dtype=float64), Array([0.0039649], dtype=float64))(mean, sigma), mse cost 0.7863377206759106, total cost 0.8345020369223193
+----------------------------------------------------------------------------------------------------
+ 95%|#########5| 95/100 [13:55<00:22,  4.42s/it]
+epoch 95, training loss 0.8345020369223193, gradients norm (Array(15.26864935, dtype=float64), [Array(27.21569849, dtype=float64)], Array(113.82013361, dtype=float64)), testing loss 0.8345020369223193
+Critical moisture ratio [0.07864855]
+Mass transfer coefficient constant [159.95854049]
+Heat transfer coefficient constant [0.51942045]
+Inlet moisture of R13SSR4 is (Array([0.10042464], dtype=float64), Array([0.00401902], dtype=float64))(mean, sigma), mse cost 0.948778822051988, total cost 0.993835066459694
+----------------------------------------------------------------------------------------------------
+ 96%|#########6| 96/100 [14:00<00:18,  4.51s/it]
+epoch 96, training loss 0.993835066459694, gradients norm (Array(143.01574812, dtype=float64), [Array(159.85079634, dtype=float64)], Array(102.09060171, dtype=float64)), testing loss 0.993835066459694
+Critical moisture ratio [0.07864423]
+Mass transfer coefficient constant [159.95840927]
+Heat transfer coefficient constant [0.5195838]
+Inlet moisture of R13SSR4 is (Array([0.10042733], dtype=float64), Array([0.00415041], dtype=float64))(mean, sigma), mse cost 1.0994061363193603, total cost 1.1338070332048122
+----------------------------------------------------------------------------------------------------
+ 97%|#########7| 97/100 [14:04<00:13,  4.48s/it]
+epoch 97, training loss 1.1338070332048122, gradients norm (Array(71.64442531, dtype=float64), [Array(54.55043679, dtype=float64)], Array(33.02829918, dtype=float64)), testing loss 1.1338070332048122
+Critical moisture ratio [0.07858719]
+Mass transfer coefficient constant [159.95823346]
+Heat transfer coefficient constant [0.51969391]
+Inlet moisture of R13SSR4 is (Array([0.10046731], dtype=float64), Array([0.0042424], dtype=float64))(mean, sigma), mse cost 0.7887512851183229, total cost 0.8173867048475267
+----------------------------------------------------------------------------------------------------
+ 98%|#########8| 98/100 [14:08<00:08,  4.40s/it]
+epoch 98, training loss 0.8173867048475267, gradients norm (Array(59.89904038, dtype=float64), [Array(78.51495715, dtype=float64)], Array(99.00597639, dtype=float64)), testing loss 0.8173867048475267
+Critical moisture ratio [0.07858023]
+Mass transfer coefficient constant [159.95804299]
+Heat transfer coefficient constant [0.519838]
+Inlet moisture of R13SSR4 is (Array([0.10044919], dtype=float64), Array([0.00440599], dtype=float64))(mean, sigma), mse cost 0.9036441661245186, total cost 0.922407411133516
+----------------------------------------------------------------------------------------------------
+ 99%|#########9| 99/100 [14:12<00:04,  4.37s/it]
+epoch 99, training loss 0.922407411133516, gradients norm (Array(80.6556379, dtype=float64), [Array(98.52961931, dtype=float64)], Array(63.79346761, dtype=float64)), testing loss 0.922407411133516
+Finished Optimization 
+ ----------------------------------------------------------------------------------------------------
+Sigma [0.00440599]
+---------------------------------------------------------------------------------------------------- 
+Optimization result {'opt_state': OptimizerState(packed_state=([Array([ 2.04289149e+00,  4.92375225e+00,  4.99704480e+00,  4.90266020e+00,
+        5.02995425e+00,  4.98216084e+00,  7.86341947e-02,  5.20031812e-01,
+        4.92945299e-02, -3.68443434e-02, -7.29277061e-02, -1.32447575e-01,
+        1.35079164e-01, -3.07290237e-03,  8.73461047e-04, -2.17986576e-03,
+        3.16654193e-03, -2.60600736e-04,  5.13171367e-02, -3.63019770e-02,
+       -7.49706098e-02, -1.34879543e-01,  1.36845921e-01, -7.82286548e-03,
+       -1.53581188e-02,  1.56551978e-03, -2.66263540e-03,  1.26365416e-02,
+        3.95666876e-02, -3.21778839e-02, -3.90181287e-02, -1.39080408e-02,
+       -2.62578346e-02, -2.78294257e-02, -2.86075934e-02, -1.25148288e-02,
+       -3.54882752e-02, -4.48715214e-03, -5.10446210e-02, -3.64051362e-02,
+       -4.14226936e-02, -1.09020640e-02, -2.83438312e-02, -3.34570451e-02,
+        3.52069603e-02,  2.69351388e-02,  3.99817983e-02,  2.42356760e-02,
+        3.88676948e-02, -2.42722542e-02, -2.67450303e-02, -2.07045066e-02,
+       -2.09112429e-02, -4.12921729e-02, -1.77654034e-02, -2.80490816e-02,
+       -2.13819376e-02, -2.29529266e-02, -2.58499427e-02,  4.34424407e-02,
+        4.14711111e-02,  2.55816116e-02,  4.24495014e-02,  3.61782421e-02,
+       -1.93650125e-02, -1.63861640e-02, -3.16565568e-02, -1.29971006e-02,
+       -2.89215519e-02, -2.79469367e-02, -3.25148968e-02, -2.16047063e-02,
+       -1.59650121e-02, -4.01689149e-02, -2.73707274e-02, -3.21820528e-02,
+       -2.19384051e-02, -2.07652911e-02, -3.29588085e-02,  5.43317361e-02,
+        4.21945941e-02,  7.01270722e-02, -1.06904872e-02,  3.61733157e-02,
+        2.82605172e-02, -2.28404587e-02,  5.28620697e-02,  6.79867159e-02,
+        5.10253100e-02,  4.69106180e-02,  5.58094911e-02,  3.90067619e-02,
+       -3.10208246e-02,  4.59680765e-02,  6.68866572e-02, -1.07042535e-02,
+        4.68245391e-02,  3.84125772e-02,  5.42298705e-02,  3.40512967e-02,
+        5.71005119e-02,  3.35375264e-02, -1.25795953e-02,  3.61619761e-02,
+        4.65865384e-02, -1.30095114e-03,  4.96088294e-02,  3.03990744e-02,
+        5.04094582e-02,  4.98111418e-02,  2.75089836e-02,  3.50219024e-02,
+       -3.30785114e-02,  4.39297073e-02,  4.38463703e-02, -1.30766984e-02,
+        5.27168944e-02,  6.81527839e-02,  4.53238924e-02,  4.70742124e-02,
+        4.22578377e-02,  5.68991094e-02, -3.54589989e-02,  3.68099981e-02,
+        5.01966325e-02, -1.56962993e-02,  4.36997449e-02,  4.13531043e-02,
+        5.93210752e-02,  3.79443911e-02,  4.31058955e-02,  4.71507002e-02,
+       -2.26088751e-02,  4.81804814e-02,  3.01034521e-02, -4.42936889e-03,
+        4.09737565e-02,  3.92323509e-02,  5.81074154e-02,  4.30667392e-02,
+        3.96902540e-02,  3.81176849e-02, -1.74385681e-02,  4.95664610e-02,
+        6.11026178e-02, -2.72944174e-02,  3.78381340e-02,  3.63917859e-02,
+        3.72062165e-02,  5.55222210e-02,  4.85739139e-02,  5.21470435e-02,
+       -2.32537985e-02,  4.61487519e-02,  3.64150129e-02, -1.40442341e-02,
+        6.88060701e-02,  5.35637239e-02,  5.65720248e-02,  1.67842264e-02,
+        1.63519775e-02,  3.25878295e-03, -1.49489463e-02,  1.04955905e-02,
+        1.36221914e-02,  7.57943393e-03,  2.66289335e-02,  2.18880349e-02,
+        1.89864029e-02,  5.30893581e-02,  4.56484070e-02,  5.63832580e-02,
+       -1.43673439e-02,  6.26419298e-02,  3.27496250e-02, -2.74296891e-02,
+        4.40491403e-02,  5.05426366e-02,  6.59414420e-02, -8.12683209e-02,
+       -8.86733317e-02, -6.68357594e-02, -7.04399149e-02, -6.72272359e-02,
+       -8.01378717e-02, -7.47577923e-02, -7.28649536e-02, -5.29102232e-02,
+       -7.63804496e-02,  1.59957881e+02,  4.20699586e-02,  8.83436200e-02,
+       -1.38342092e-01,  4.38165898e-02,  1.33217784e-01,  6.47191006e-03,
+       -8.84281571e-03, -8.81120521e-03,  6.06508191e-03,  1.52938343e-02,
+       -4.36300727e-02, -7.47703233e-02,  1.32321117e-01, -1.10470492e-02,
+       -1.34999321e-01,  3.01181430e-04,  1.31811661e-02,  2.14944720e-02,
+       -1.35098972e-02, -2.26543737e-03, -2.69948343e-02, -7.44037076e-03,
+        2.06689479e-02,  2.85225834e-02, -1.20475531e-02, -1.88576417e-03,
+       -1.21109330e-02,  2.57934052e-02,  3.00970688e-02,  1.32579318e-02,
+        4.08706173e-03,  1.78592580e-02,  2.85105758e-02,  3.19733047e-02,
+       -4.09842990e-03,  6.00201290e-03,  3.52967003e-02,  4.93069807e-03,
+       -4.72059042e-03,  3.33375632e-02,  3.56473727e-02,  5.71445407e-03,
+        3.12955369e-02,  2.37570239e-02, -5.21905415e-03, -8.47275316e-03,
+        4.28615820e-02, -5.84900942e-04,  1.25771344e-02,  3.48769867e-02,
+        3.45737481e-02, -1.16973124e-02,  1.14007254e-02,  8.99634065e-03,
+       -9.24154380e-03, -5.83198069e-03,  4.59282335e-02,  1.27887705e-02,
+       -9.77248144e-04,  4.21090610e-02,  3.10859205e-02,  4.82961800e-03,
+        2.33399720e-02,  3.71595508e-02,  1.39544806e-02, -1.19013469e-02,
+       -1.32382587e-02,  2.32688708e-02,  2.61514974e-02,  3.34512284e-03,
+        6.40744427e-03, -4.72242321e-02, -3.09499730e-02, -5.40025489e-02,
+       -3.88535943e-02, -1.42932027e-02, -5.59277456e-02, -3.08664976e-02,
+       -2.67974994e-02, -4.64750913e-02, -5.21829175e-02, -5.26051943e-02,
+       -5.56988388e-02, -5.98201543e-02, -2.22726114e-02, -4.89553108e-02,
+       -1.75115665e-02, -2.95347061e-02, -2.15519726e-02, -3.30879793e-02,
+       -6.41099965e-02, -5.84262922e-02, -5.09237754e-02, -5.35343884e-02,
+       -2.63580708e-02, -3.36706532e-02, -9.84276606e-03, -3.94269364e-02,
+       -1.46910794e-02, -5.67580343e-02, -4.62765684e-02, -5.24107159e-02,
+       -5.88287915e-02, -6.43109211e-02, -1.58125809e-02, -4.14019965e-02,
+       -3.09923303e-02, -5.01577257e-02, -2.86967401e-02, -5.30567360e-02,
+       -5.12472499e-02, -5.01251169e-02, -7.20549455e-02, -6.23065541e-02,
+       -8.72377349e-03, -5.29469546e-02, -1.28101910e-02, -2.76849131e-02,
+       -8.89273222e-03, -3.54561091e-02, -4.55654472e-02, -2.85126452e-02,
+       -3.58103848e-02, -4.58580096e-02, -3.43379342e-02, -3.43270285e-02,
+       -1.76418787e-02, -2.48711044e-02, -3.62565742e-02, -3.33938118e-02,
+       -4.85621445e-02, -4.33724157e-02, -4.57003724e-02, -5.98633035e-02,
+       -9.97605373e-03, -4.07322604e-02, -4.61469422e-03, -4.18487686e-02,
+       -2.54807944e-02, -6.07382088e-02, -5.37861909e-02, -7.86877161e-03,
+       -3.89350047e-02, -4.35449923e-02, -4.78985798e-02, -1.22565189e-02,
+       -7.78278918e-02, -1.77670060e-02, -4.82757877e-02,  8.03859417e-03,
+       -4.57712450e-02, -2.76554670e-02, -2.02791558e-02, -5.94812101e-02,
+       -3.55257134e-02, -2.71822046e-02, -2.16269674e-02, -1.29273260e-02,
+       -3.33417214e-02, -9.64362647e-03, -3.81476826e-02, -4.07065531e-02,
+       -5.90392935e-02, -6.39417398e-02, -8.37547556e-03, -4.07716664e-02,
+       -7.45566788e-03, -6.32172097e-02, -1.52339011e-02, -4.64420428e-02,
+       -6.62364316e-02, -1.12473076e-01, -1.07711953e-01, -1.06361512e-01,
+       -9.98989606e-02, -1.04146262e-01, -1.08047335e-01, -1.13385771e-01,
+       -1.18500102e-01, -1.13552510e-01, -9.95534580e-02], dtype=float64), Array([-5.09143294e-02,  2.02137036e-01,  1.55077341e-02,  5.26714431e-02,
+       -2.74256557e-04,  8.88842424e-02, -7.21873750e+00, -9.58620975e-01,
+       -1.08369955e-02, -4.33650517e-03,  4.74545142e-03,  6.60386502e-03,
+       -1.27099032e-03,  0.00000000e+00,  0.00000000e+00,  0.00000000e+00,
+        0.00000000e+00,  0.00000000e+00, -3.42307209e-02, -1.49786258e-02,
+        1.70814278e-02,  2.45734775e-02, -3.87820180e-03,  0.00000000e+00,
+        0.00000000e+00,  0.00000000e+00,  0.00000000e+00,  0.00000000e+00,
+        1.19427434e-02, -5.25464709e-05, -5.76440655e-04, -8.32916612e-04,
+       -8.25341206e-06, -5.54343557e-03, -4.82880143e-05, -5.11185254e-04,
+       -7.28423800e-04, -7.73510533e-06, -5.07305843e-03, -5.24908252e-05,
+       -5.68680107e-04, -8.18061912e-04, -8.29386081e-06, -5.52863487e-03,
+        2.57808542e-05,  3.01301732e-04,  4.52870145e-04,  3.72480553e-06,
+        2.72263661e-03, -5.00725662e-05, -5.35515843e-04, -7.66552830e-04,
+       -7.95786620e-06, -5.26538990e-03, -4.97806847e-05, -5.46327312e-04,
+       -7.89784941e-04, -7.79444640e-06, -5.25046213e-03,  2.39432811e-05,
+        2.49264467e-04,  3.62218204e-04,  3.54648293e-06,  2.48274193e-03,
+       -5.41345757e-05, -5.96894738e-04, -8.63398462e-04, -8.50661423e-06,
+       -5.71672398e-03, -5.24208124e-05, -5.64686091e-04, -8.10178207e-04,
+       -8.33218183e-06, -5.51905078e-03, -5.75362120e-05, -6.32394907e-04,
+       -9.13410358e-04, -9.08920631e-06, -6.07551354e-03,  6.49739238e-05,
+        3.07228986e-04,  1.21057636e-04, -1.19349067e-03,  2.01102266e-04,
+        4.41371064e-05, -1.16792003e-03,  7.86785142e-05,  1.97189472e-04,
+        1.21165086e-04,  6.67362174e-05,  3.29272758e-04,  1.27466692e-04,
+       -1.29942575e-03,  2.14212812e-04,  4.41908105e-05, -1.27174629e-03,
+        8.16374323e-05,  2.10002322e-04,  1.27634447e-04,  4.24508171e-05,
+        2.36534437e-04,  8.72361480e-05, -9.70023491e-04,  1.51371466e-04,
+        2.58864228e-05, -9.49611629e-04,  5.35796206e-05,  1.48319471e-04,
+        8.74537037e-05,  5.35949864e-05,  2.62891980e-04,  1.02010562e-04,
+       -1.03402132e-03,  1.71168559e-04,  3.56321440e-05, -1.01195288e-03,
+        6.54741899e-05,  1.67806204e-04,  1.02132989e-04,  5.54007691e-05,
+        2.57194299e-04,  1.02133790e-04, -9.90928565e-04,  1.68811356e-04,
+        3.80401048e-05, -9.69622652e-04,  6.67997295e-05,  1.65536992e-04,
+        1.02198044e-04,  5.03958742e-05,  2.83312043e-04,  1.04143014e-04,
+       -1.16579915e-03,  1.81107770e-04,  3.05078874e-05, -1.14131062e-03,
+        6.37511705e-05,  1.77447712e-04,  1.04414370e-04,  4.97148458e-05,
+        2.68571208e-04,  1.00252151e-04, -1.09125948e-03,  1.72570900e-04,
+        3.10026524e-05, -1.06823380e-03,  6.22282206e-05,  1.69108787e-04,
+        1.00469714e-04,  6.46775441e-05,  2.84879273e-04,  1.15734439e-04,
+       -1.07563386e-03,  1.88491206e-04,  4.56776043e-05, -1.05234687e-03,
+        7.70538716e-05,  1.84886011e-04,  1.15750632e-04, -1.14166470e-05,
+        1.16190172e-04,  1.74540905e-05, -6.99370817e-04,  5.96393543e-05,
+       -2.18306031e-05, -6.86256114e-04, -3.52918977e-06,  5.79762076e-05,
+        1.81367363e-05,  6.61178722e-05,  2.96231514e-04,  1.19454139e-04,
+       -1.12646425e-03,  1.95485833e-04,  4.62756819e-05, -1.10214260e-03,
+        7.90704979e-05,  1.91729970e-04,  1.19491481e-04,  6.30267986e-03,
+        6.21772200e-03,  6.61323302e-03,  6.17315130e-03,  6.08280860e-03,
+        6.44443763e-03,  6.22882997e-03,  6.22042292e-03,  6.84930602e-03,
+        6.15168336e-03,  4.05523549e-05, -8.53773692e-05, -1.40021755e-03,
+        2.34525736e-03, -8.21435755e-04, -9.14211238e-04,  0.00000000e+00,
+        0.00000000e+00,  0.00000000e+00,  0.00000000e+00,  0.00000000e+00,
+        3.79657923e-04,  4.85531449e-03, -8.19177894e-03,  2.97210822e-03,
+        3.26687182e-03,  0.00000000e+00,  0.00000000e+00,  0.00000000e+00,
+        0.00000000e+00,  0.00000000e+00, -3.65992393e-03, -5.19954552e-06,
+       -1.25254035e-04, -1.40225712e-04, -5.80336424e-07, -8.89409389e-04,
+       -4.96444337e-06, -1.32661311e-04, -1.49025476e-04, -5.22352076e-07,
+       -9.04397627e-04, -5.92585236e-06, -1.63048742e-04, -1.83354217e-04,
+       -6.14890033e-07, -1.09938621e-03,  7.43858835e-07, -2.59070889e-05,
+       -3.07549070e-05,  2.03755495e-07, -5.79458535e-05, -5.08130739e-06,
+       -1.13149490e-04, -1.26317622e-04, -5.89847293e-07, -8.30091881e-04,
+        7.58539467e-07, -2.77251304e-05, -3.28807040e-05,  2.10228752e-07,
+       -6.45773694e-05, -5.01297105e-06, -1.11179455e-04, -1.24102231e-04,
+       -5.83809852e-07, -8.17013956e-04,  6.03124098e-07, -2.93640667e-05,
+       -3.46316494e-05,  1.89289062e-07, -8.22700677e-05, -5.85726345e-06,
+       -1.25502547e-04, -1.39910889e-04, -6.91756406e-07, -9.36046812e-04,
+       -5.31362534e-06, -1.45734513e-04, -1.63856209e-04, -5.51418484e-07,
+       -9.83833090e-04,  1.54534170e-04,  1.71613271e-04,  1.77643570e-04,
+        2.71055528e-04,  1.39557570e-04,  2.72412704e-04,  1.33110243e-04,
+        2.65488863e-04,  1.32422278e-04,  1.74310969e-04,  1.46789343e-04,
+        1.63845061e-04,  1.69869836e-04,  2.65286502e-04,  1.31803400e-04,
+        2.66548836e-04,  1.25567500e-04,  2.59548639e-04,  1.24642782e-04,
+        1.66591776e-04,  1.44821610e-04,  1.61814247e-04,  1.67818490e-04,
+        2.63107670e-04,  1.29884642e-04,  2.64348497e-04,  1.23714826e-04,
+        2.57356895e-04,  1.22743551e-04,  1.64563065e-04,  1.35046469e-04,
+        1.50671584e-04,  1.56193526e-04,  2.43267010e-04,  1.21319681e-04,
+        2.44431929e-04,  1.15591865e-04,  2.38021124e-04,  1.14763867e-04,
+        1.53186105e-04,  1.41620528e-04,  1.58354713e-04,  1.64267875e-04,
+        2.58426101e-04,  1.26906529e-04,  2.59635278e-04,  1.20857762e-04,
+        2.52739173e-04,  1.19869329e-04,  1.61068696e-04,  1.48138282e-04,
+        1.64627671e-04,  1.70453803e-04,  2.60577918e-04,  1.33672555e-04,
+        2.61876773e-04,  1.27486872e-04,  2.55177591e-04,  1.26778966e-04,
+        1.67245290e-04,  1.55070794e-04,  1.73592331e-04,  1.80134710e-04,
+        2.84930924e-04,  1.38779329e-04,  2.86247657e-04,  1.32127655e-04,
+        2.78597878e-04,  1.30980807e-04,  1.76605290e-04,  1.65425271e-04,
+        1.82726733e-04,  1.88828157e-04,  2.81187572e-04,  1.50288172e-04,
+        2.82668445e-04,  1.43519544e-04,  2.75759772e-04,  1.43098224e-04,
+        1.85394818e-04,  1.56962342e-04,  1.74157482e-04,  1.80231102e-04,
+        2.73490396e-04,  1.41886443e-04,  2.74874527e-04,  1.35373692e-04,
+        2.67918251e-04,  1.34707761e-04,  1.76870293e-04,  1.34622465e-04,
+        1.50668306e-04,  1.56339608e-04,  2.46873320e-04,  1.20509119e-04,
+        2.48018728e-04,  1.14740402e-04,  2.41390271e-04,  1.13756325e-04,
+        1.53279568e-04,  2.35788847e-03,  2.30385585e-03,  2.25619807e-03,
+        2.37248056e-03,  2.22064855e-03,  2.22414394e-03,  2.23891338e-03,
+        2.32955367e-03,  2.15118657e-03,  2.26639575e-03], dtype=float64), Array([1.97422916e-03, 4.84795922e-03, 1.67184454e-04, 2.35652228e-04,
+       2.65460059e-08, 2.65839584e-02, 1.70353835e+03, 2.32923546e+00,
+       1.08237672e-04, 3.13433283e-05, 1.19046641e-05, 1.88428516e-06,
+       1.19182168e-07, 0.00000000e+00, 0.00000000e+00, 0.00000000e+00,
+       0.00000000e+00, 0.00000000e+00, 1.28749688e-03, 4.19819541e-04,
+       1.87074947e-04, 3.22551056e-05, 1.16867472e-06, 0.00000000e+00,
+       0.00000000e+00, 0.00000000e+00, 0.00000000e+00, 0.00000000e+00,
+       4.44823848e-03, 1.11233333e-08, 4.16019542e-07, 5.69086139e-07,
+       2.60054891e-10, 1.02969760e-04, 8.38626161e-09, 3.10034093e-07,
+       4.22363122e-07, 1.97773296e-10, 7.75252796e-05, 1.07229083e-08,
+       3.99405364e-07, 5.45495709e-07, 2.51242752e-10, 9.92049132e-05,
+       4.71490308e-09, 1.78821680e-07, 2.44176734e-07, 1.03976484e-10,
+       4.34980127e-05, 9.30900367e-09, 3.45790390e-07, 4.71868521e-07,
+       2.18760487e-10, 8.61022765e-05, 9.89643309e-09, 3.71436864e-07,
+       5.08806200e-07, 2.31211006e-10, 9.16666052e-05, 2.85966738e-09,
+       1.08759222e-07, 1.48763150e-07, 6.29581795e-11, 2.63815946e-05,
+       1.20566917e-08, 4.50425686e-07, 6.15786039e-07, 2.81872515e-10,
+       1.11587961e-04, 1.05260387e-08, 3.90632055e-07, 5.32823195e-07,
+       2.47246083e-10, 9.73412234e-05, 1.37106876e-08, 5.09579705e-07,
+       6.95077456e-07, 3.20913523e-10, 1.26789123e-04, 1.11831494e-06,
+       2.49970143e-06, 1.40880476e-06, 1.69573794e-06, 1.85015943e-06,
+       1.01516925e-06, 1.54393821e-06, 1.15477609e-06, 1.80441535e-06,
+       1.37714316e-06, 1.35516369e-06, 3.05702756e-06, 1.71059284e-06,
+       2.04921425e-06, 2.25335836e-06, 1.22965880e-06, 1.86491867e-06,
+       1.39994944e-06, 2.19694841e-06, 1.67163881e-06, 7.13358600e-07,
+       1.56056982e-06, 8.93569268e-07, 1.08273276e-06, 1.16498017e-06,
+       6.48645659e-07, 9.87273540e-07, 7.36151369e-07, 1.13713758e-06,
+       8.74286026e-07, 8.19561686e-07, 1.80603895e-06, 1.02867461e-06,
+       1.24388375e-06, 1.34447733e-06, 7.44761781e-07, 1.13363089e-06,
+       8.45873463e-07, 1.31192757e-06, 1.00610152e-06, 7.42468669e-07,
+       1.63088172e-06, 9.31181797e-07, 1.12940898e-06, 1.21573949e-06,
+       6.74841378e-07, 1.02963362e-06, 7.66225552e-07, 1.18644446e-06,
+       9.10848927e-07, 1.07738309e-06, 2.39851077e-06, 1.35549295e-06,
+       1.62692215e-06, 1.77766415e-06, 9.78487103e-07, 1.48154407e-06,
+       1.11241495e-06, 1.73400742e-06, 1.32529874e-06, 9.30923006e-07,
+       2.06079951e-06, 1.16961258e-06, 1.40800561e-06, 1.53099582e-06,
+       8.45784975e-07, 1.28271886e-06, 9.60986753e-07, 1.49369442e-06,
+       1.14378040e-06, 8.82889942e-07, 1.95503844e-06, 1.10978250e-06,
+       1.34426154e-06, 1.45288877e-06, 8.01887877e-07, 1.22479811e-06,
+       9.11352003e-07, 1.41744387e-06, 1.08519282e-06, 3.63714550e-07,
+       7.85614145e-07, 4.53669240e-07, 5.53461547e-07, 5.88773920e-07,
+       3.31143235e-07, 5.05116112e-07, 3.75434271e-07, 5.75176847e-07,
+       4.44456218e-07, 9.80819679e-07, 2.18130219e-06, 1.23420986e-06,
+       1.49074410e-06, 1.61813945e-06, 8.90576989e-07, 1.35777872e-06,
+       1.01257780e-06, 1.57840674e-06, 1.20666146e-06, 8.65704816e-05,
+       8.50582542e-05, 6.71960212e-05, 7.88847011e-05, 8.32391285e-05,
+       7.05885164e-05, 7.22339832e-05, 9.18776556e-05, 2.94283900e-05,
+       9.16544615e-05, 5.95143285e-09, 9.79932715e-09, 7.62934145e-08,
+       1.33465739e-07, 2.64076746e-08, 3.00576543e-08, 0.00000000e+00,
+       0.00000000e+00, 0.00000000e+00, 0.00000000e+00, 0.00000000e+00,
+       2.13703046e-07, 1.29469910e-06, 2.48934474e-06, 5.00705600e-07,
+       5.22608027e-07, 0.00000000e+00, 0.00000000e+00, 0.00000000e+00,
+       0.00000000e+00, 0.00000000e+00, 5.82023291e-06, 9.13022884e-12,
+       1.15677552e-09, 1.37373533e-09, 1.94119960e-13, 1.16947269e-07,
+       9.06239857e-12, 1.18318470e-09, 1.41148597e-09, 1.92260876e-13,
+       1.16986180e-07, 1.31901482e-11, 1.72593870e-09, 2.06408834e-09,
+       2.79452924e-13, 1.70045073e-07, 1.88236166e-12, 1.81021729e-10,
+       2.16376347e-10, 4.10762352e-14, 1.96766123e-08, 8.18095576e-12,
+       1.01945464e-09, 1.20653025e-09, 1.74193961e-13, 1.04517441e-07,
+       2.02859417e-12, 1.88342209e-10, 2.25281810e-10, 4.44475462e-14,
+       2.08535064e-08, 8.16303710e-12, 1.01168945e-09, 1.19691253e-09,
+       1.73982231e-13, 1.03999633e-07, 1.99279091e-12, 1.91159243e-10,
+       2.28728420e-10, 4.34568169e-14, 2.07446030e-08, 1.02913170e-11,
+       1.25702862e-09, 1.48663849e-09, 2.19351520e-13, 1.30427934e-07,
+       1.05849804e-11, 1.39122508e-09, 1.66265809e-09, 2.24315517e-13,
+       1.36814217e-07, 1.07440760e-09, 1.02804985e-09, 1.02255488e-09,
+       3.97746146e-09, 1.18684607e-09, 3.94011955e-09, 1.15860568e-09,
+       3.61716167e-09, 1.26124478e-09, 1.01512159e-09, 1.19499455e-09,
+       1.10129031e-09, 1.07710933e-09, 4.20756979e-09, 1.36279264e-09,
+       4.15839558e-09, 1.33395879e-09, 3.80834986e-09, 1.46376901e-09,
+       1.07615164e-09, 1.19557715e-09, 1.09715905e-09, 1.07098041e-09,
+       4.18855436e-09, 1.36827567e-09, 4.13844960e-09, 1.33969691e-09,
+       3.78890137e-09, 1.47137519e-09, 1.07083555e-09, 9.61574681e-10,
+       8.93863001e-10, 8.78308169e-10, 3.45765720e-09, 1.08759046e-09,
+       3.41939914e-09, 1.06485785e-09, 3.13380551e-09, 1.16526677e-09,
+       8.76224586e-10, 1.17819302e-09, 1.07591047e-09, 1.04788445e-09,
+       4.10344701e-09, 1.35361330e-09, 4.05311902e-09, 1.32588562e-09,
+       3.70975726e-09, 1.45745585e-09, 1.04866368e-09, 9.93723318e-10,
+       9.50049207e-10, 9.44673977e-10, 3.67934540e-09, 1.09824555e-09,
+       3.64465052e-09, 1.07255623e-09, 3.34609487e-09, 1.16721247e-09,
+       9.37991162e-10, 1.50965518e-09, 1.36435248e-09, 1.32086780e-09,
+       5.12616892e-09, 1.75256101e-09, 5.05894555e-09, 1.71648348e-09,
+       4.62537545e-09, 1.89283332e-09, 1.32424203e-09, 9.94780162e-10,
+       9.94337303e-10, 1.00653241e-09, 3.87298546e-09, 1.05865140e-09,
+       3.84588614e-09, 1.02894466e-09, 3.53903105e-09, 1.11018852e-09,
+       9.92135098e-10, 1.04622830e-09, 1.01308522e-09, 1.01267461e-09,
+       3.92889253e-09, 1.14404700e-09, 3.89461908e-09, 1.11568676e-09,
+       3.57796217e-09, 1.21138827e-09, 1.00338349e-09, 1.08000887e-09,
+       9.84099280e-10, 9.57864496e-10, 3.77250867e-09, 1.24242884e-09,
+       3.72586911e-09, 1.21763029e-09, 3.40979048e-09, 1.33852465e-09,
+       9.58943940e-10, 1.59035676e-07, 1.64595199e-07, 1.60932417e-07,
+       1.77085909e-07, 1.60041995e-07, 1.42944904e-07, 1.61558906e-07,
+       1.54298530e-07, 1.30089967e-07, 1.72354067e-07], dtype=float64)], [Array([0.10036458], dtype=float64), Array([12.21381599], dtype=float64), Array([1983.89661741], dtype=float64)], [Array([0.00460595], dtype=float64), Array([-24.45449602], dtype=float64), Array([1424.03378619], dtype=float64)]), tree_def=PyTreeDef((*, [*], *)), subtree_defs=(PyTreeDef((*, *, *)), PyTreeDef((*, *, *)), PyTreeDef((*, *, *)))),
+ 'result': defaultdict(<class 'list'>,
+                       {'learning_rate': [Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64),
+                                          Array(0.001, dtype=float64)],
+                        'testing_loss': [Array(2.09811089, dtype=float64),
+                                         Array(1.01485651, dtype=float64),
+                                         Array(1.40161905, dtype=float64),
+                                         Array(0.99728515, dtype=float64),
+                                         Array(1.46851654, dtype=float64),
+                                         Array(1.29347304, dtype=float64),
+                                         Array(1.26879942, dtype=float64),
+                                         Array(1.6975644, dtype=float64),
+                                         Array(1.54323226, dtype=float64),
+                                         Array(1.50281526, dtype=float64),
+                                         Array(1.34673259, dtype=float64),
+                                         Array(1.42659094, dtype=float64),
+                                         Array(1.36309907, dtype=float64),
+                                         Array(1.4685558, dtype=float64),
+                                         Array(1.11316074, dtype=float64),
+                                         Array(1.22754116, dtype=float64),
+                                         Array(0.95767117, dtype=float64),
+                                         Array(0.94095688, dtype=float64),
+                                         Array(1.04096852, dtype=float64),
+                                         Array(2.03122175, dtype=float64),
+                                         Array(1.03248012, dtype=float64),
+                                         Array(1.27357551, dtype=float64),
+                                         Array(1.16369716, dtype=float64),
+                                         Array(0.92668436, dtype=float64),
+                                         Array(0.94001283, dtype=float64),
+                                         Array(1.07157634, dtype=float64),
+                                         Array(1.12648875, dtype=float64),
+                                         Array(0.97209966, dtype=float64),
+                                         Array(1.19831669, dtype=float64),
+                                         Array(1.29216733, dtype=float64),
+                                         Array(0.9281342, dtype=float64),
+                                         Array(0.91998944, dtype=float64),
+                                         Array(0.91312412, dtype=float64),
+                                         Array(0.93101723, dtype=float64),
+                                         Array(0.87841129, dtype=float64),
+                                         Array(0.94371634, dtype=float64),
+                                         Array(1.16648534, dtype=float64),
+                                         Array(0.96024182, dtype=float64),
+                                         Array(0.85301074, dtype=float64),
+                                         Array(1.06524436, dtype=float64),
+                                         Array(0.78455487, dtype=float64),
+                                         Array(0.98992723, dtype=float64),
+                                         Array(1.58538022, dtype=float64),
+                                         Array(1.08783973, dtype=float64),
+                                         Array(0.9699681, dtype=float64),
+                                         Array(1.04921253, dtype=float64),
+                                         Array(0.96089065, dtype=float64),
+                                         Array(0.92516429, dtype=float64),
+                                         Array(1.15239765, dtype=float64),
+                                         Array(1.63754578, dtype=float64),
+                                         Array(0.97315547, dtype=float64),
+                                         Array(1.02809532, dtype=float64),
+                                         Array(1.0226331, dtype=float64),
+                                         Array(0.9621811, dtype=float64),
+                                         Array(0.89367638, dtype=float64),
+                                         Array(0.81137418, dtype=float64),
+                                         Array(0.95424261, dtype=float64),
+                                         Array(1.38271451, dtype=float64),
+                                         Array(1.33693745, dtype=float64),
+                                         Array(0.89117445, dtype=float64),
+                                         Array(1.14758751, dtype=float64),
+                                         Array(1.67273104, dtype=float64),
+                                         Array(1.38948304, dtype=float64),
+                                         Array(1.21676556, dtype=float64),
+                                         Array(1.32207544, dtype=float64),
+                                         Array(0.84501691, dtype=float64),
+                                         Array(0.94948565, dtype=float64),
+                                         Array(0.95120848, dtype=float64),
+                                         Array(1.25325481, dtype=float64),
+                                         Array(1.70513798, dtype=float64),
+                                         Array(1.01021332, dtype=float64),
+                                         Array(1.24843703, dtype=float64),
+                                         Array(1.13823733, dtype=float64),
+                                         Array(1.13185329, dtype=float64),
+                                         Array(0.96696126, dtype=float64),
+                                         Array(1.15151074, dtype=float64),
+                                         Array(1.24645624, dtype=float64),
+                                         Array(1.22433014, dtype=float64),
+                                         Array(0.93848738, dtype=float64),
+                                         Array(1.06806211, dtype=float64),
+                                         Array(1.08687835, dtype=float64),
+                                         Array(1.55329979, dtype=float64),
+                                         Array(1.07684071, dtype=float64),
+                                         Array(1.83650333, dtype=float64),
+                                         Array(0.90205842, dtype=float64),
+                                         Array(1.00199538, dtype=float64),
+                                         Array(1.20608434, dtype=float64),
+                                         Array(1.1806523, dtype=float64),
+                                         Array(1.27778953, dtype=float64),
+                                         Array(0.94047032, dtype=float64),
+                                         Array(1.56026842, dtype=float64),
+                                         Array(1.5382987, dtype=float64),
+                                         Array(1.07872576, dtype=float64),
+                                         Array(0.95690166, dtype=float64),
+                                         Array(1.24605786, dtype=float64),
+                                         Array(0.83450204, dtype=float64),
+                                         Array(0.99383507, dtype=float64),
+                                         Array(1.13380703, dtype=float64),
+                                         Array(0.8173867, dtype=float64),
+                                         Array(0.92240741, dtype=float64)],
+                        'training_loss': [Array(2.09811089, dtype=float64),
+                                          Array(1.01485651, dtype=float64),
+                                          Array(1.40161905, dtype=float64),
+                                          Array(0.99728515, dtype=float64),
+                                          Array(1.46851654, dtype=float64),
+                                          Array(1.29347304, dtype=float64),
+                                          Array(1.26879942, dtype=float64),
+                                          Array(1.6975644, dtype=float64),
+                                          Array(1.54323226, dtype=float64),
+                                          Array(1.50281526, dtype=float64),
+                                          Array(1.34673259, dtype=float64),
+                                          Array(1.42659094, dtype=float64),
+                                          Array(1.36309907, dtype=float64),
+                                          Array(1.4685558, dtype=float64),
+                                          Array(1.11316074, dtype=float64),
+                                          Array(1.22754116, dtype=float64),
+                                          Array(0.95767117, dtype=float64),
+                                          Array(0.94095688, dtype=float64),
+                                          Array(1.04096852, dtype=float64),
+                                          Array(2.03122175, dtype=float64),
+                                          Array(1.03248012, dtype=float64),
+                                          Array(1.27357551, dtype=float64),
+                                          Array(1.16369716, dtype=float64),
+                                          Array(0.92668436, dtype=float64),
+                                          Array(0.94001283, dtype=float64),
+                                          Array(1.07157634, dtype=float64),
+                                          Array(1.12648875, dtype=float64),
+                                          Array(0.97209966, dtype=float64),
+                                          Array(1.19831669, dtype=float64),
+                                          Array(1.29216733, dtype=float64),
+                                          Array(0.9281342, dtype=float64),
+                                          Array(0.91998944, dtype=float64),
+                                          Array(0.91312412, dtype=float64),
+                                          Array(0.93101723, dtype=float64),
+                                          Array(0.87841129, dtype=float64),
+                                          Array(0.94371634, dtype=float64),
+                                          Array(1.16648534, dtype=float64),
+                                          Array(0.96024182, dtype=float64),
+                                          Array(0.85301074, dtype=float64),
+                                          Array(1.06524436, dtype=float64),
+                                          Array(0.78455487, dtype=float64),
+                                          Array(0.98992723, dtype=float64),
+                                          Array(1.58538022, dtype=float64),
+                                          Array(1.08783973, dtype=float64),
+                                          Array(0.9699681, dtype=float64),
+                                          Array(1.04921253, dtype=float64),
+                                          Array(0.96089065, dtype=float64),
+                                          Array(0.92516429, dtype=float64),
+                                          Array(1.15239765, dtype=float64),
+                                          Array(1.63754578, dtype=float64),
+                                          Array(0.97315547, dtype=float64),
+                                          Array(1.02809532, dtype=float64),
+                                          Array(1.0226331, dtype=float64),
+                                          Array(0.9621811, dtype=float64),
+                                          Array(0.89367638, dtype=float64),
+                                          Array(0.81137418, dtype=float64),
+                                          Array(0.95424261, dtype=float64),
+                                          Array(1.38271451, dtype=float64),
+                                          Array(1.33693745, dtype=float64),
+                                          Array(0.89117445, dtype=float64),
+                                          Array(1.14758751, dtype=float64),
+                                          Array(1.67273104, dtype=float64),
+                                          Array(1.38948304, dtype=float64),
+                                          Array(1.21676556, dtype=float64),
+                                          Array(1.32207544, dtype=float64),
+                                          Array(0.84501691, dtype=float64),
+                                          Array(0.94948565, dtype=float64),
+                                          Array(0.95120848, dtype=float64),
+                                          Array(1.25325481, dtype=float64),
+                                          Array(1.70513798, dtype=float64),
+                                          Array(1.01021332, dtype=float64),
+                                          Array(1.24843703, dtype=float64),
+                                          Array(1.13823733, dtype=float64),
+                                          Array(1.13185329, dtype=float64),
+                                          Array(0.96696126, dtype=float64),
+                                          Array(1.15151074, dtype=float64),
+                                          Array(1.24645624, dtype=float64),
+                                          Array(1.22433014, dtype=float64),
+                                          Array(0.93848738, dtype=float64),
+                                          Array(1.06806211, dtype=float64),
+                                          Array(1.08687835, dtype=float64),
+                                          Array(1.55329979, dtype=float64),
+                                          Array(1.07684071, dtype=float64),
+                                          Array(1.83650333, dtype=float64),
+                                          Array(0.90205842, dtype=float64),
+                                          Array(1.00199538, dtype=float64),
+                                          Array(1.20608434, dtype=float64),
+                                          Array(1.1806523, dtype=float64),
+                                          Array(1.27778953, dtype=float64),
+                                          Array(0.94047032, dtype=float64),
+                                          Array(1.56026842, dtype=float64),
+                                          Array(1.5382987, dtype=float64),
+                                          Array(1.07872576, dtype=float64),
+                                          Array(0.95690166, dtype=float64),
+                                          Array(1.24605786, dtype=float64),
+                                          Array(0.83450204, dtype=float64),
+                                          Array(0.99383507, dtype=float64),
+                                          Array(1.13380703, dtype=float64),
+                                          Array(0.8173867, dtype=float64),
+                                          Array(0.92240741, dtype=float64)]})}
+---------------------------------------------------------------------------------------------------- 
+Meta parameters optimal {'parameters': Parameters(params={'constant': Array([2.04253791, 4.92464806, 4.99741489, 4.90371893, 5.02943485],      dtype=float64), 'constant_jump': Array([4.98232906], dtype=float64), 'critical_moisture': Array([0.07858023], dtype=float64), 'heat_transfer_coefficient_constant': Array([0.519838], dtype=float64), 'heat_transfer_coefficient_falling': defaultdict(<class 'list'>, {'bias': [Array([ 0.04897311, -0.03708335, -0.07250331, -0.1309631 ,  0.13394316,
+       -0.0030729 ,  0.00087346, -0.00217987,  0.00316654, -0.0002606 ],      dtype=float64), Array([ 0.05102277, -0.03652755, -0.07458525, -0.13354444,  0.13573897,
+       -0.00782287, -0.01535812,  0.00156552, -0.00266264,  0.01263654],      dtype=float64), Array([0.03962194], dtype=float64)], 'weight': [Array([[-0.03233161, -0.0392939 , -0.01424873, -0.02641573, -0.02799799],
+       [-0.02877029, -0.01279811, -0.03583412, -0.00465683, -0.05122241],
+       [-0.03656155, -0.04170035, -0.01124384, -0.02850526, -0.03362832],
+       [ 0.03532281,  0.02715499,  0.04026459,  0.02434836,  0.03899508],
+       [-0.02443239, -0.02702603, -0.02104884, -0.02107723, -0.04146727],
+       [-0.01791981, -0.02832568, -0.02172359, -0.02311107, -0.02601916],
+       [ 0.04358059,  0.04170433,  0.02587139,  0.04258737,  0.03632739],
+       [-0.01951714, -0.01666059, -0.03199606, -0.01315341, -0.02908854],
+       [-0.02810459, -0.03279368, -0.02194719, -0.01612849, -0.04034152],
+       [-0.02752234, -0.03245541, -0.02227647, -0.02092182, -0.0331253 ]],      dtype=float64), Array([[ 0.05435069,  0.04225455,  0.07015854, -0.01097329,  0.03621894,
+         0.02827403, -0.02313049,  0.05288466,  0.06803201,  0.05105717],
+       [ 0.04692831,  0.0558676 ,  0.03903683, -0.03130092,  0.04601211,
+         0.06689895, -0.01099161,  0.04684583,  0.0384563 ,  0.05426033],
+       [ 0.03406681,  0.05715894,  0.033566  , -0.01286725,  0.03620525,
+         0.04659646, -0.00159585,  0.0496281 ,  0.03044199,  0.05043832],
+       [ 0.04982941,  0.02756935,  0.03505294, -0.03336459,  0.04397526,
+         0.04385911, -0.01336997,  0.05273886,  0.06819799,  0.04535531],
+       [ 0.04709405,  0.04231998,  0.05693177, -0.03574671,  0.03685724,
+         0.05021092, -0.01599115,  0.04372329,  0.0414    ,  0.05935412],
+       [ 0.03795937,  0.04316234,  0.0471783 , -0.0228909 ,  0.0482224 ,
+         0.03011297, -0.0047187 ,  0.04099241,  0.03927393,  0.0581354 ],
+       [ 0.04308264,  0.03974798,  0.03814629, -0.01772234,  0.0496095 ,
+         0.06111302, -0.02758545,  0.03785772,  0.03643448,  0.0372352 ],
+       [ 0.05554346,  0.04863678,  0.05218094, -0.02354006,  0.046197  ,
+         0.03643075, -0.01433764,  0.06883098,  0.05361164,  0.05660631],
+       [ 0.01677839,  0.01639243,  0.00326678, -0.01523902,  0.01051957,
+         0.01361049,  0.00728149,  0.02662716,  0.02191162,  0.0189948 ],
+       [ 0.05310996,  0.0457103 ,  0.05641644, -0.01465203,  0.06268935,
+         0.03276476, -0.02772155,  0.04407339,  0.05058973,  0.06597501]],      dtype=float64), Array([[-0.0810593 , -0.0884653 , -0.06658682, -0.07022545, -0.06702151,
+        -0.07990119, -0.07453165, -0.07266471, -0.05252063, -0.07618218]],      dtype=float64)]}), 'mass_transfer_coefficient_constant': Array([159.95804299], dtype=float64), 'mass_transfer_coefficient_falling': defaultdict(<class 'list'>, {'bias': [Array([ 0.04180384,  0.08677941, -0.13636125,  0.04225686,  0.1315907 ,
+        0.00647191, -0.00884282, -0.00881121,  0.00606508,  0.01529383],      dtype=float64), Array([-0.04337666, -0.07345364,  0.13071904, -0.00975101, -0.13360491,
+        0.00030118,  0.01318117,  0.02149447, -0.0135099 , -0.00226544],      dtype=float64), Array([-0.02746295], dtype=float64)], 'weight': [Array([[-0.0079708 ,  0.01953269,  0.02735527, -0.01245116, -0.00268827],
+       [-0.01261927,  0.02460346,  0.0288732 ,  0.01289291,  0.00327116],
+       [ 0.01735622,  0.02729964,  0.03072809, -0.00445526,  0.00517937],
+       [ 0.03546362,  0.00433668, -0.0053656 ,  0.03364313,  0.03551991],
+       [ 0.00516687,  0.03020215,  0.02263499, -0.00565194, -0.00926503],
+       [ 0.04302556, -0.00120813,  0.01190131,  0.03518024,  0.03443576],
+       [-0.01223813,  0.01032226,  0.00788957, -0.00967026, -0.00661371],
+       [ 0.04605978,  0.01213358, -0.00168368,  0.04238516,  0.03090967],
+       [ 0.00426677,  0.0222478 ,  0.03603995,  0.01350171, -0.0127011 ],
+       [-0.01374174,  0.02206335,  0.02491163,  0.0029882 ,  0.00558671]],      dtype=float64), Array([[-0.04576962, -0.02929858, -0.05228854, -0.03752748, -0.01304333,
+        -0.05458869, -0.02965993, -0.02543547, -0.04532463, -0.05049492],
+       [-0.05129505, -0.05417552, -0.0582232 , -0.02101071, -0.04785371,
+        -0.01623618, -0.02847395, -0.02025427, -0.0320828 , -0.06254316],
+       [-0.05713402, -0.04941651, -0.05195221, -0.02510369, -0.03258727,
+        -0.00857487, -0.03838407, -0.01340103, -0.05577073, -0.04472497],
+       [-0.05106703, -0.0572739 , -0.06268484, -0.01453609, -0.04026697,
+        -0.02970257, -0.04906481, -0.02738483, -0.05201944, -0.04965058],
+       [-0.04885212, -0.07056541, -0.06074088, -0.007479  , -0.05188269,
+        -0.01155186, -0.02666084, -0.00761239, -0.03448733, -0.04403083],
+       [-0.02706274, -0.03416247, -0.04414693, -0.03301244, -0.03308251,
+        -0.01630345, -0.02367005, -0.03489545, -0.03224888, -0.0468773 ],
+       [-0.042141  , -0.04425034, -0.05833405, -0.00874813, -0.03970943,
+        -0.00337292, -0.04086478, -0.02421684, -0.05980931, -0.05228881],
+       [-0.00625053, -0.03714712, -0.04170863, -0.04650446, -0.01083139,
+        -0.0764215 , -0.01638655, -0.04684553,  0.00936368, -0.04395524],
+       [-0.02615824, -0.01859095, -0.05773378, -0.03417944, -0.02588793,
+        -0.02026794, -0.01167686, -0.03195972, -0.00844947, -0.03642491],
+       [-0.03944266, -0.05755743, -0.06238319, -0.00713529, -0.03971681,
+        -0.00620196, -0.06220267, -0.0139584 , -0.0454827 , -0.06470924]],      dtype=float64), Array([[-0.11064867, -0.10595972, -0.10462611, -0.09815934, -0.10243346,
+        -0.10623214, -0.11166701, -0.11667016, -0.11171216, -0.09786896]],      dtype=float64)]})})}
+---------------------------------------------------------------------------------------------------- 
+Initial moisture content (mean, sigma) {'R13': (Array([0.10044919], dtype=float64),
+         Array([0.00440599], dtype=float64))}
+Saving parameters for R13SSR4
+---------------------------------------------------------------------------------------------------- 
+Plotting R13SSR4
+Loss scaled (total cost, cost) R13SSR4 : (Array([1.04478345, 2.64525196, 2.28535467], dtype=float64), Array([1.04478345, 2.64525196, 2.28535467], dtype=float64))
+Loss unscaled R13SSR4 : [ 84.86126986 433.50591516 266.61994105]
+Product energy R13SSR4 : {'zone1': Array([71241.719, 71241.719, 71241.719], dtype=float64), 'zone2': Array([79148.314, 79148.314, 79148.314], dtype=float64), 'zone3': Array([128793.33133333, 128793.33133333, 128793.33133333], dtype=float64), 'zone4': Array([173118.309, 173118.309, 173118.309], dtype=float64), 'zone5': Array([173118.309, 173118.309, 173118.309], dtype=float64)}
+Product average cure index R13SSR4 : [[1.13140357e-06 2.26280586e-06 3.39420687e-06 4.52560660e-06
+  5.65700505e-06 6.78840222e-06 7.91979811e-06 9.05119272e-06
+  1.01825860e-05 1.13139781e-05 1.24453689e-05 1.35767584e-05
+  1.47081466e-05 1.58629329e-05 1.78272421e-05 2.31122651e-05
+  3.75325862e-05 7.15309698e-05 1.40168678e-04 2.61878060e-04
+  4.56632581e-04 7.44226330e-04 1.14305035e-03 1.66943503e-03
+  2.33744558e-03 3.15896560e-03 4.14392541e-03 5.30057870e-03
+  6.31802157e-03 7.00901414e-03 7.52412189e-03 7.98744523e-03
+  8.51656031e-03 9.22657454e-03 1.02262757e-02 1.16130175e-02
+  1.34695559e-02 1.58633407e-02 1.88475422e-02 2.24629079e-02
+  2.67397890e-02 3.16999780e-02 3.74443054e-02 4.40811917e-02
+  5.16307797e-02 6.01034116e-02 6.94998439e-02 7.98113605e-02
+  9.10198449e-02 1.03097881e-01 1.16008956e-01 1.29707831e-01
+  1.44141134e-01 1.59248203e-01 1.74962174e-01 1.91211297e-01
+  2.07814189e-01 2.24604119e-01 2.41527596e-01 2.58531382e-01
+  2.75564006e-01 2.92576892e-01 3.09525164e-01 3.26368151e-01
+  3.43069621e-01 3.59597875e-01 3.75925588e-01 3.92029630e-01
+  4.07890735e-01 4.23493182e-01]
+ [1.13140357e-06 2.26280586e-06 3.39420687e-06 4.52560660e-06
+  5.65700505e-06 6.78840222e-06 7.91979811e-06 9.05119272e-06
+  1.01825860e-05 1.13139781e-05 1.24453689e-05 1.35767584e-05
+  1.47081466e-05 1.58395335e-05 1.69709191e-05 1.81023035e-05
+  1.92336866e-05 2.03650684e-05 2.14964489e-05 2.27984194e-05
+  2.56334249e-05 3.36554497e-05 5.44815128e-05 1.00495350e-04
+  1.88267962e-04 3.36986342e-04 5.66618837e-04 8.96394073e-04
+  1.19429231e-03 1.37958991e-03 1.52546497e-03 1.70063878e-03
+  1.98389156e-03 2.46390495e-03 3.23200685e-03 4.37431178e-03
+  5.96647704e-03 8.07154815e-03 1.07400563e-02 1.40113189e-02
+  1.79151529e-02 2.24735476e-02 2.77796649e-02 3.39355242e-02
+  4.09651938e-02 4.88846668e-02 5.77019597e-02 6.74170269e-02
+  7.80215473e-02 8.94986541e-02 1.01822697e-01 1.14959131e-01
+  1.28864627e-01 1.43487463e-01 1.58768257e-01 1.74641007e-01
+  1.90924201e-01 2.07449228e-01 2.24163112e-01 2.41011683e-01
+  2.57941355e-01 2.74900541e-01 2.91840727e-01 3.08717227e-01
+  3.25489641e-01 3.42122074e-01 3.58583184e-01 3.74845992e-01
+  3.90887726e-01 4.06689404e-01]
+ [1.13140357e-06 2.26280586e-06 3.39420687e-06 4.52560660e-06
+  5.65700505e-06 6.78840222e-06 7.91979811e-06 9.05119272e-06
+  1.05829067e-05 1.62888042e-05 3.73863332e-05 9.80469716e-05
+  2.37379432e-04 5.06424357e-04 9.22073287e-04 1.47701924e-03
+  2.18927378e-03 3.07379047e-03 4.14264902e-03 5.40542290e-03
+  6.86959856e-03 8.54097123e-03 1.04239845e-02 1.25220058e-02
+  1.48375430e-02 1.73724090e-02 2.01278479e-02 2.31046310e-02
+  2.59022613e-02 2.82564548e-02 3.03619212e-02 3.24042041e-02
+  3.45571210e-02 3.69763523e-02 3.97942828e-02 4.31180788e-02
+  4.70306710e-02 5.15934640e-02 5.68496613e-02 6.28274896e-02
+  6.95429841e-02 7.70022393e-02 8.53122853e-02 9.45766607e-02
+  1.04780234e-01 1.15896187e-01 1.27887327e-01 1.40707305e-01
+  1.54301805e-01 1.68609743e-01 1.83564506e-01 1.99095229e-01
+  2.15128133e-01 2.31587832e-01 2.48398647e-01 2.65485862e-01
+  2.82685572e-01 2.99852368e-01 3.16942654e-01 3.33916205e-01
+  3.50736740e-01 3.67372211e-01 3.83794855e-01 3.99981076e-01
+  4.15911257e-01 4.31569406e-01 4.46942880e-01 4.62021939e-01
+  4.76799490e-01 4.91270622e-01]]
+---------------------------------------------------------------------------------------------------- 
+Total cost [2.08956691 5.29050392 4.57070933]
+---------------------------------------------------------------------------------------------------- 
+Optimal objective Cost(elbo={'R13SSR4': Array([1.04478345, 2.64525196, 2.28535467], dtype=float64)}, cost={'R13SSR4': Array([1.04478345, 2.64525196, 2.28535467], dtype=float64)})
+---------------------------------------------------------------------------------------------------- 
+Event times EventTime(event_time={'R13SSR4': Array([[[13.65094519],
+        [13.74596783],
+        [13.84102437],
+        [13.9361155 ],
+        [14.03159231],
+        [14.12685958],
+        [14.22177986],
+        [14.31676809],
+        [14.41161214],
+        [14.5064224 ],
+        [14.60109837],
+        [14.69573658],
+        [14.79024753],
+        [14.88471936],
+        [14.97906834],
+        [15.07337919],
+        [15.16756936],
+        [15.26172429],
+        [15.35645289],
+        [15.45066945]],
+
+       [[19.1478082 ],
+        [19.27749272],
+        [19.4070698 ],
+        [19.53654115],
+        [19.66591266],
+        [19.79523322],
+        [19.92459176],
+        [20.05411275],
+        [20.18326322],
+        [20.31241158],
+        [20.44175729],
+        [20.57075718],
+        [20.69979632],
+        [20.82892636],
+        [20.95806035],
+        [21.08718012],
+        [21.21591427],
+        [21.34467125],
+        [21.47325746],
+        [21.60193396]],
+
+       [[ 8.15036883],
+        [ 8.20723009],
+        [ 8.26402695],
+        [ 8.32076962],
+        [ 8.37770526],
+        [ 8.43445226],
+        [ 8.4912783 ],
+        [ 8.54806595],
+        [ 8.6048303 ],
+        [ 8.66159415],
+        [ 8.7183867 ],
+        [ 8.77524239],
+        [ 8.83219966],
+        [ 8.88904834],
+        [ 8.9458651 ],
+        [ 9.00270928],
+        [ 9.05954451],
+        [ 9.11636589],
+        [ 9.17323208],
+        [ 9.22999486]]], dtype=float64)})
+---------------------------------------------------------------------------------------------------- 
+Plotting R13SSR4
+Loss scaled (total cost, cost) R13SSR4 : (Array([1.04478345, 2.64525196, 2.28535467], dtype=float64), Array([1.04478345, 2.64525196, 2.28535467], dtype=float64))
+Loss unscaled R13SSR4 : [ 84.86126986 433.50591516 266.61994105]
+Product energy R13SSR4 : {'zone1': Array([71241.719, 71241.719, 71241.719], dtype=float64), 'zone2': Array([79148.314, 79148.314, 79148.314], dtype=float64), 'zone3': Array([128793.33133333, 128793.33133333, 128793.33133333], dtype=float64), 'zone4': Array([173118.309, 173118.309, 173118.309], dtype=float64), 'zone5': Array([173118.309, 173118.309, 173118.309], dtype=float64)}
+Product average cure index R13SSR4 : [[1.13140357e-06 2.26280586e-06 3.39420687e-06 4.52560660e-06
+  5.65700505e-06 6.78840222e-06 7.91979811e-06 9.05119272e-06
+  1.01825860e-05 1.13139781e-05 1.24453689e-05 1.35767584e-05
+  1.47081466e-05 1.58629329e-05 1.78272421e-05 2.31122651e-05
+  3.75325862e-05 7.15309698e-05 1.40168678e-04 2.61878060e-04
+  4.56632581e-04 7.44226330e-04 1.14305035e-03 1.66943503e-03
+  2.33744558e-03 3.15896560e-03 4.14392541e-03 5.30057870e-03
+  6.31802157e-03 7.00901414e-03 7.52412189e-03 7.98744523e-03
+  8.51656031e-03 9.22657454e-03 1.02262757e-02 1.16130175e-02
+  1.34695559e-02 1.58633407e-02 1.88475422e-02 2.24629079e-02
+  2.67397890e-02 3.16999780e-02 3.74443054e-02 4.40811917e-02
+  5.16307797e-02 6.01034116e-02 6.94998439e-02 7.98113605e-02
+  9.10198449e-02 1.03097881e-01 1.16008956e-01 1.29707831e-01
+  1.44141134e-01 1.59248203e-01 1.74962174e-01 1.91211297e-01
+  2.07814189e-01 2.24604119e-01 2.41527596e-01 2.58531382e-01
+  2.75564006e-01 2.92576892e-01 3.09525164e-01 3.26368151e-01
+  3.43069621e-01 3.59597875e-01 3.75925588e-01 3.92029630e-01
+  4.07890735e-01 4.23493182e-01]
+ [1.13140357e-06 2.26280586e-06 3.39420687e-06 4.52560660e-06
+  5.65700505e-06 6.78840222e-06 7.91979811e-06 9.05119272e-06
+  1.01825860e-05 1.13139781e-05 1.24453689e-05 1.35767584e-05
+  1.47081466e-05 1.58395335e-05 1.69709191e-05 1.81023035e-05
+  1.92336866e-05 2.03650684e-05 2.14964489e-05 2.27984194e-05
+  2.56334249e-05 3.36554497e-05 5.44815128e-05 1.00495350e-04
+  1.88267962e-04 3.36986342e-04 5.66618837e-04 8.96394073e-04
+  1.19429231e-03 1.37958991e-03 1.52546497e-03 1.70063878e-03
+  1.98389156e-03 2.46390495e-03 3.23200685e-03 4.37431178e-03
+  5.96647704e-03 8.07154815e-03 1.07400563e-02 1.40113189e-02
+  1.79151529e-02 2.24735476e-02 2.77796649e-02 3.39355242e-02
+  4.09651938e-02 4.88846668e-02 5.77019597e-02 6.74170269e-02
+  7.80215473e-02 8.94986541e-02 1.01822697e-01 1.14959131e-01
+  1.28864627e-01 1.43487463e-01 1.58768257e-01 1.74641007e-01
+  1.90924201e-01 2.07449228e-01 2.24163112e-01 2.41011683e-01
+  2.57941355e-01 2.74900541e-01 2.91840727e-01 3.08717227e-01
+  3.25489641e-01 3.42122074e-01 3.58583184e-01 3.74845992e-01
+  3.90887726e-01 4.06689404e-01]
+ [1.13140357e-06 2.26280586e-06 3.39420687e-06 4.52560660e-06
+  5.65700505e-06 6.78840222e-06 7.91979811e-06 9.05119272e-06
+  1.05829067e-05 1.62888042e-05 3.73863332e-05 9.80469716e-05
+  2.37379432e-04 5.06424357e-04 9.22073287e-04 1.47701924e-03
+  2.18927378e-03 3.07379047e-03 4.14264902e-03 5.40542290e-03
+  6.86959856e-03 8.54097123e-03 1.04239845e-02 1.25220058e-02
+  1.48375430e-02 1.73724090e-02 2.01278479e-02 2.31046310e-02
+  2.59022613e-02 2.82564548e-02 3.03619212e-02 3.24042041e-02
+  3.45571210e-02 3.69763523e-02 3.97942828e-02 4.31180788e-02
+  4.70306710e-02 5.15934640e-02 5.68496613e-02 6.28274896e-02
+  6.95429841e-02 7.70022393e-02 8.53122853e-02 9.45766607e-02
+  1.04780234e-01 1.15896187e-01 1.27887327e-01 1.40707305e-01
+  1.54301805e-01 1.68609743e-01 1.83564506e-01 1.99095229e-01
+  2.15128133e-01 2.31587832e-01 2.48398647e-01 2.65485862e-01
+  2.82685572e-01 2.99852368e-01 3.16942654e-01 3.33916205e-01
+  3.50736740e-01 3.67372211e-01 3.83794855e-01 3.99981076e-01
+  4.15911257e-01 4.31569406e-01 4.46942880e-01 4.62021939e-01
+  4.76799490e-01 4.91270622e-01]]
+---------------------------------------------------------------------------------------------------- 
+Total cost [2.08956691 5.29050392 4.57070933]
+---------------------------------------------------------------------------------------------------- 
+Optimal objective Cost(elbo={'R13SSR4': Array([1.04478345, 2.64525196, 2.28535467], dtype=float64)}, cost={'R13SSR4': Array([1.04478345, 2.64525196, 2.28535467], dtype=float64)})
+---------------------------------------------------------------------------------------------------- 
+Event times EventTime(event_time={'R13SSR4': Array([[[13.65094519],
+        [13.74596783],
+        [13.84102437],
+        [13.9361155 ],
+        [14.03159231],
+        [14.12685958],
+        [14.22177986],
+        [14.31676809],
+        [14.41161214],
+        [14.5064224 ],
+        [14.60109837],
+        [14.69573658],
+        [14.79024753],
+        [14.88471936],
+        [14.97906834],
+        [15.07337919],
+        [15.16756936],
+        [15.26172429],
+        [15.35645289],
+        [15.45066945]],
+
+       [[19.1478082 ],
+        [19.27749272],
+        [19.4070698 ],
+        [19.53654115],
+        [19.66591266],
+        [19.79523322],
+        [19.92459176],
+        [20.05411275],
+        [20.18326322],
+        [20.31241158],
+        [20.44175729],
+        [20.57075718],
+        [20.69979632],
+        [20.82892636],
+        [20.95806035],
+        [21.08718012],
+        [21.21591427],
+        [21.34467125],
+        [21.47325746],
+        [21.60193396]],
+
+       [[ 8.15036883],
+        [ 8.20723009],
+        [ 8.26402695],
+        [ 8.32076962],
+        [ 8.37770526],
+        [ 8.43445226],
+        [ 8.4912783 ],
+        [ 8.54806595],
+        [ 8.6048303 ],
+        [ 8.66159415],
+        [ 8.7183867 ],
+        [ 8.77524239],
+        [ 8.83219966],
+        [ 8.88904834],
+        [ 8.9458651 ],
+        [ 9.00270928],
+        [ 9.05954451],
+        [ 9.11636589],
+        [ 9.17323208],
+        [ 9.22999486]]], dtype=float64)})
